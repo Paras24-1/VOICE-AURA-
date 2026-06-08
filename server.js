@@ -258,10 +258,16 @@ wss.on('connection', async (ws, request) => {
 
   geminiWs.on('close', (code, reason) => {
     console.log(`[Gemini] Connection closed: Code=${code}, Reason=${reason.toString()}`);
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close(1011, `Gemini disconnected: ${reason.toString() || 'unknown reason'}`);
+    }
   });
 
   geminiWs.on('error', (err) => {
     console.error('[Gemini] WebSocket client error:', err);
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close(1011, `Gemini API error: ${err.message || 'unknown'}`);
+    }
   });
 
   // Handle incoming WebSocket messages from Client (Twilio or Browser WebRTC)
