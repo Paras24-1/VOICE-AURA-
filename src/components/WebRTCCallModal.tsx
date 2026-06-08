@@ -174,9 +174,20 @@ export default function WebRTCCallModal({ agentId, agentName, onClose }: WebRTCC
     setCallState("connecting");
     setStatusText("Connecting to AI voice server...");
 
-    const wsUrl = `${WS_SERVER_URL}?agentId=${agentId}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    let ws: WebSocket;
+    try {
+      const wsUrl = `${WS_SERVER_URL}?agentId=${agentId}`;
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+    } catch (err: any) {
+      console.error("[WebRTC] WebSocket initialization failed:", err);
+      setCallState("error");
+      setStatusText("Connection failed");
+      setErrorMessage(
+        `Failed to initialize connection: ${err.message || err}. If in production, make sure NEXT_PUBLIC_WS_URL is set to a secure 'wss://' domain in Vercel settings and redeployed.`
+      );
+      return;
+    }
 
     ws.onopen = () => {
       setCallState("connected");
