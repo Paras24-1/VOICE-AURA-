@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+:root {
+  --background: #030303;
+  --foreground: #f4f4f5;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-heading: var(--font-outfit), system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-heading);
+}
+
+body {
+  background: #030303;
+  color: #f4f4f5;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Glassmorphism helpers */
+.glass-panel {
+  background: rgba(10, 10, 12, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-panel-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-panel-hover:hover {
+  background: rgba(15, 15, 20, 0.8);
+  border-color: rgba(139, 92, 246, 0.3);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 15px rgba(139, 92, 246, 0.05);
+}
+
+.text-glow {
+  text-shadow: 0 0 20px rgba(167, 139, 250, 0.3);
+}
+
+.glow-purple {
+  box-shadow: 0 0 50px -10px rgba(139, 92, 246, 0.15);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 50px -10px rgba(16, 185, 129, 0.15);
+}
+
