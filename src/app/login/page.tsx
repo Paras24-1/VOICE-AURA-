@@ -45,7 +45,7 @@ function LoginContent() {
           // Auto-signed in immediately (depends on Supabase project config)
           setSuccessMsg("Account created successfully! Redirecting...");
           setTimeout(() => {
-            router.push(redirectedFrom);
+            window.location.replace(redirectedFrom);
           }, 1500);
         } else {
           // Email verification link sent
@@ -63,7 +63,7 @@ function LoginContent() {
         } else if (data.user) {
           setSuccessMsg("Welcome back! Loading your voice node...");
           setTimeout(() => {
-            router.push(redirectedFrom);
+            window.location.replace(redirectedFrom);
           }, 1500);
         }
       }
