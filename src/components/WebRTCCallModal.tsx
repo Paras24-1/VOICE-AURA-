@@ -13,9 +13,10 @@ type CallState = "idle" | "requesting_mic" | "connecting" | "connected" | "ended
 
 // The WebSocket server runs on port 5050 (server.js)
 const WS_SERVER_URL =
-  typeof window !== "undefined"
+  process.env.NEXT_PUBLIC_WS_URL ||
+  (typeof window !== "undefined"
     ? `ws://${window.location.hostname}:5050/webRTC-stream`
-    : "ws://localhost:5050/webRTC-stream";
+    : "ws://localhost:5050/webRTC-stream");
 
 export default function WebRTCCallModal({ agentId, agentName, onClose }: WebRTCCallModalProps) {
   const [callState, setCallState] = useState<CallState>("idle");
