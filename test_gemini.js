@@ -1,6 +1,15 @@
 const WebSocket = require('ws');
+const path = require('path');
+const dotenv = require('dotenv');
 
-const GEMINI_API_KEY = 'AIzaSyAv8-xg80DLwhhYKdA6_j9ZIvwtVwvW3kc';
+// Load environment variables from .env.local
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  console.error('Error: GEMINI_API_KEY is not defined in environment variables.');
+  process.exit(1);
+}
 const geminiModel = 'models/gemini-2.5-flash';
 const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
 

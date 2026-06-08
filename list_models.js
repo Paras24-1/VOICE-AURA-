@@ -1,6 +1,15 @@
 const https = require('https');
+const path = require('path');
+const dotenv = require('dotenv');
 
-const GEMINI_API_KEY = 'AIzaSyAv8-xg80DLwhhYKdA6_j9ZIvwtVwvW3kc';
+// Load environment variables from .env.local
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  console.error('Error: GEMINI_API_KEY is not defined in environment variables.');
+  process.exit(1);
+}
 const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`;
 
 console.log('Fetching models list...');
