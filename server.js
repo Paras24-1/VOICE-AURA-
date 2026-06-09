@@ -35,28 +35,31 @@ const activeCampaigns = new Map();
 
 // Vobiz Outbound dialer integration
 async function initiateVobizCall(contact, agentId) {
-  const vobizUrl = process.env.VOBIZ_API_URL || 'https://api.vobiz.com/v1/calls';
-  const apiKey = process.env.VOBIZ_API_KEY;
+  const authId = process.env.VOBIZ_AUTH_ID;
+  const authToken = process.env.VOBIZ_AUTH_TOKEN;
   const callerId = process.env.VOBIZ_CALLER_ID;
   const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
   const answerUrl = `${host}/api/vobiz/outbound-answer?contactId=${contact.id}&agentId=${agentId}`;
 
-  if (!apiKey || !callerId) {
-    console.log(`[Vobiz] Missing credentials. Simulating call to ${contact.phone_number}`);
+  if (!authId || !authToken || !callerId) {
+    console.log(`[Vobiz] Missing credentials (VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN, or VOBIZ_CALLER_ID). Simulating call to ${contact.phone_number}`);
     return { simulated: true };
   }
+
+  const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/`;
 
   const response = await fetch(vobizUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
+      'X-Auth-ID': authId,
+      'X-Auth-Token': authToken
     },
     body: JSON.stringify({
       from: callerId,
       to: contact.phone_number,
       answer_url: answerUrl,
-      event_url: `${host}/api/vobiz/events?contactId=${contact.id}`
+      answer_method: 'POST'
     })
   });
 
@@ -66,7 +69,7 @@ async function initiateVobizCall(contact, agentId) {
   }
 
   const data = await response.json();
-  return { simulated: false, callSid: data.call_sid || data.id };
+  return { simulated: false, callSid: data.call_sid || data.id || data.CallUUID || data.call_uuid };
 }
 
 // Campaign Background Queue Processor
