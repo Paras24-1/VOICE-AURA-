@@ -167,12 +167,14 @@ wss.on('connection', async (ws, request) => {
               text: agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Aura, an ultra-low latency voice agent.'
             }
           ]
-        }
+        },
+        inputAudioTranscription: {},
+        outputAudioTranscription: {}
       }
     };
     
     geminiWs.send(JSON.stringify(setupMessage));
-    console.log('[Gemini] Sent session configuration payload.');
+    console.log('[Gemini] Sent session configuration payload with transcriptions enabled.');
   });
 
   // Handle message response from Gemini (audio data out)
@@ -180,6 +182,26 @@ wss.on('connection', async (ws, request) => {
     try {
       const response = JSON.parse(messageData.toString());
       
+      // Capture live transcription segments from Gemini
+      if (response.serverContent?.inputTranscription?.text) {
+        const userText = response.serverContent.inputTranscription.text;
+        console.log(`[Gemini Transcript Input]: ${userText}`);
+        transcript.push({ role: 'user', text: userText, timestamp: new Date() });
+      }
+
+      if (response.serverContent?.outputTranscription?.text) {
+        const agentText = response.serverContent.outputTranscription.text;
+        console.log(`[Gemini Transcript Output]: ${agentText}`);
+        
+        const lastEntry = transcript[transcript.length - 1];
+        if (lastEntry && lastEntry.role === 'agent') {
+          const needsSpace = !lastEntry.text.endsWith(' ') && !agentText.startsWith(' ');
+          lastEntry.text += (needsSpace ? ' ' : '') + agentText;
+        } else {
+          transcript.push({ role: 'agent', text: agentText, timestamp: new Date() });
+        }
+      }
+
       if (response.setupComplete) {
         isSetupComplete = true;
         console.log('[Gemini] setupComplete received successfully. Now ready to receive audio.');
