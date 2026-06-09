@@ -235,34 +235,97 @@ export default function CampaignsPage() {
     const lines = text.split(/\r?\n/);
     const parsed: { name: string; phone_number: string }[] = [];
 
-    let startIndex = 0;
-    if (lines.length > 0) {
-      const firstLine = lines[0].toLowerCase();
-      // Check if header exists
-      if (firstLine.includes("name") || firstLine.includes("phone") || firstLine.includes("number")) {
-        startIndex = 1;
+    if (lines.length === 0) {
+      setCsvError("The file is empty.");
+      setCsvContacts([]);
+      return;
+    }
+
+    // 1. Detect delimiter of the first line
+    const firstLine = lines[0];
+    let delimiter = ",";
+    if (firstLine.includes(";")) delimiter = ";";
+    else if (firstLine.includes("\t")) delimiter = "\t";
+
+    // 2. Parse all lines into rows
+    const rows = lines
+      .map(line => {
+        return line.split(delimiter).map(cell => cell.replace(/^['"]|['"]$/g, "").trim());
+      })
+      .filter(row => row.length > 0 && row.some(cell => cell !== ""));
+
+    if (rows.length === 0) {
+      setCsvError("No readable content found in the file.");
+      setCsvContacts([]);
+      return;
+    }
+
+    // 3. Detect column indices for Name and Phone
+    let nameColIndex = 0;
+    let phoneColIndex = 1;
+    let hasHeader = false;
+
+    // Check if the first row is a header
+    const firstRow = rows[0];
+    const isHeaderRow = firstRow.some(cell => {
+      const c = cell.toLowerCase();
+      return c.includes("name") || c.includes("phone") || c.includes("number") || c.includes("contact") || c.includes("mobile");
+    });
+
+    if (isHeaderRow) {
+      hasHeader = true;
+      // Search for columns matching keywords
+      firstRow.forEach((cell, idx) => {
+        const c = cell.toLowerCase();
+        if (c.includes("phone") || c.includes("number") || c.includes("mobile") || c.includes("tel") || c.includes("contact")) {
+          phoneColIndex = idx;
+        } else if (c.includes("name") || c.includes("first") || c.includes("last") || c.includes("user") || c.includes("person")) {
+          nameColIndex = idx;
+        }
+      });
+    } else {
+      // If no header, guess columns based on the first row's content
+      let foundPhoneIdx = -1;
+      let foundNameIdx = -1;
+
+      firstRow.forEach((cell, idx) => {
+        const digits = cell.replace(/[^\d]/g, "");
+        if (digits.length >= 7) {
+          foundPhoneIdx = idx;
+        } else if (cell.length > 0 && foundNameIdx === -1) {
+          foundNameIdx = idx;
+        }
+      });
+
+      if (foundPhoneIdx !== -1) {
+        phoneColIndex = foundPhoneIdx;
+        nameColIndex = foundNameIdx !== -1 ? foundNameIdx : (foundPhoneIdx === 0 ? 1 : 0);
       }
     }
 
-    for (let i = startIndex; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
+    // 4. Extract data starting after header
+    const dataStartIdx = hasHeader ? 1 : 0;
+    for (let i = dataStartIdx; i < rows.length; i++) {
+      const row = rows[i];
+      // Skip incomplete rows
+      if (row.length <= Math.max(nameColIndex, phoneColIndex)) continue;
 
-      const parts = line.split(/[,;]/);
-      if (parts.length >= 2) {
-        const name = parts[0].replace(/['"]/g, "").trim();
-        const phone = parts[1].replace(/['"]/g, "").trim();
-        if (name && phone) {
-          parsed.push({ name, phone_number: phone });
-        }
+      const name = row[nameColIndex] || `Contact ${i + 1}`;
+      const phone = row[phoneColIndex] || "";
+
+      // Clean the phone number to check if it's valid
+      const cleanPhone = phone.replace(/[^\d+]/g, "");
+      if (cleanPhone.length >= 7) {
+        parsed.push({ name, phone_number: phone });
       }
     }
 
     if (parsed.length === 0) {
-      setCsvError("No valid rows found. Please ensure format is Name, Phone (e.g. John Doe, +1234567890)");
+      setCsvError("Could not find any rows with valid phone numbers (minimum 7 digits). Please check your file format.");
       setCsvContacts([]);
     } else {
       setCsvContacts(parsed);
+      console.log(`Parsed ${parsed.length} contacts. Name col index: ${nameColIndex}, Phone col index: ${phoneColIndex}`);
     }
   };
 
@@ -273,7 +336,8 @@ export default function CampaignsPage() {
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
+      const isCsv = file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv" || file.type === "application/vnd.ms-excel";
+      if (isCsv) {
         setCsvFileName(file.name);
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -291,14 +355,19 @@ export default function CampaignsPage() {
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setCsvFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          parseCSVText(event.target.result as string);
-        }
-      };
-      reader.readAsText(file);
+      const isCsv = file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv" || file.type === "application/vnd.ms-excel";
+      if (isCsv) {
+        setCsvFileName(file.name);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            parseCSVText(event.target.result as string);
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        setCsvError("Invalid file type. Please select a .csv file.");
+      }
     }
   };
 
