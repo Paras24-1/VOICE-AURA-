@@ -18,7 +18,8 @@ import {
   Activity,
   Command,
   Sparkles,
-  FileText
+  FileText,
+  PhoneCall
 } from "lucide-react";
 
 interface SidebarItem {
@@ -60,6 +61,12 @@ export default function DashboardLayout({
       href: "/dashboard/agents",
       icon: Mic,
       description: "Configure conversational AI",
+    },
+    {
+      name: "Campaigns",
+      href: "/dashboard/campaigns",
+      icon: PhoneCall,
+      description: "Outbound voice campaigns",
     },
     {
       name: "Call Logs",

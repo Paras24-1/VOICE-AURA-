@@ -6,6 +6,7 @@ import { Mic, MicOff, PhoneOff, Volume2, Wifi, WifiOff, AlertCircle, Loader2, X 
 interface WebRTCCallModalProps {
   agentId: string;
   agentName: string;
+  contactId?: string;
   onClose: () => void;
 }
 
@@ -18,7 +19,7 @@ const WS_SERVER_URL =
     ? `ws://${window.location.hostname}:5050/webRTC-stream`
     : "ws://localhost:5050/webRTC-stream");
 
-export default function WebRTCCallModal({ agentId, agentName, onClose }: WebRTCCallModalProps) {
+export default function WebRTCCallModal({ agentId, agentName, contactId, onClose }: WebRTCCallModalProps) {
   const [callState, setCallState] = useState<CallState>("idle");
   const [isMuted, setIsMuted] = useState(false);
   const [statusText, setStatusText] = useState("Tap to start call");
@@ -176,7 +177,7 @@ export default function WebRTCCallModal({ agentId, agentName, onClose }: WebRTCC
 
     let ws: WebSocket;
     try {
-      const wsUrl = `${WS_SERVER_URL}?agentId=${agentId}`;
+      const wsUrl = `${WS_SERVER_URL}?agentId=${agentId}${contactId ? `&contactId=${contactId}` : ""}`;
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
     } catch (err: any) {
@@ -257,7 +258,7 @@ export default function WebRTCCallModal({ agentId, agentName, onClose }: WebRTCC
       );
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [agentId, agentName, playAudio]);
+  }, [agentId, agentName, contactId, playAudio]);
 
   const endCall = useCallback(() => {
     cleanup();

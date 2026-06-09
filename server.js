@@ -30,6 +30,201 @@ if (supabaseUrl && supabaseServiceKey) {
   console.warn('[Supabase] Warning: Missing credentials. Call logs will not be persisted.');
 }
 
+// Active campaigns map to track running dialing loops
+const activeCampaigns = new Map();
+
+// Vobiz Outbound dialer integration
+async function initiateVobizCall(contact, agentId) {
+  const vobizUrl = process.env.VOBIZ_API_URL || 'https://api.vobiz.com/v1/calls';
+  const apiKey = process.env.VOBIZ_API_KEY;
+  const callerId = process.env.VOBIZ_CALLER_ID;
+  const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
+  const answerUrl = `${host}/api/vobiz/outbound-answer?contactId=${contact.id}&agentId=${agentId}`;
+
+  if (!apiKey || !callerId) {
+    console.log(`[Vobiz] Missing credentials. Simulating call to ${contact.phone_number}`);
+    return { simulated: true };
+  }
+
+  const response = await fetch(vobizUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      from: callerId,
+      to: contact.phone_number,
+      answer_url: answerUrl,
+      event_url: `${host}/api/vobiz/events?contactId=${contact.id}`
+    })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Vobiz API returned ${response.status}: ${errText}`);
+  }
+
+  const data = await response.json();
+  return { simulated: false, callSid: data.call_sid || data.id };
+}
+
+// Campaign Background Queue Processor
+async function runCampaignQueue(campaignId) {
+  if (activeCampaigns.has(campaignId)) {
+    console.log(`[Campaign] Loop already running for campaign ${campaignId}`);
+    return;
+  }
+  
+  activeCampaigns.set(campaignId, true);
+  console.log(`[Campaign] Started queue loop for campaign ${campaignId}`);
+
+  try {
+    while (activeCampaigns.get(campaignId) === true) {
+      const { data: campaign, error: campErr } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('id', campaignId)
+        .single();
+
+      if (campErr || !campaign || campaign.status !== 'running') {
+        console.log(`[Campaign] Campaign ${campaignId} status is ${campaign?.status || 'not found'}. Stopping loop.`);
+        break;
+      }
+
+      const { data: contact, error: contactErr } = await supabase
+        .from('campaign_contacts')
+        .select('*')
+        .eq('campaign_id', campaignId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (contactErr) {
+        console.error('[Campaign] Error fetching next contact:', contactErr);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        continue;
+      }
+
+      if (!contact) {
+        console.log(`[Campaign] No more pending contacts for campaign ${campaignId}. Marking completed.`);
+        await supabase
+          .from('campaigns')
+          .update({ status: 'completed' })
+          .eq('id', campaignId);
+        break;
+      }
+
+      console.log(`[Campaign] Dialing contact: ${contact.name} (${contact.phone_number})`);
+
+      await supabase
+        .from('campaign_contacts')
+        .update({ status: 'dialing' })
+        .eq('id', contact.id);
+
+      try {
+        const result = await initiateVobizCall(contact, campaign.agent_id);
+
+        if (result.simulated) {
+          console.log(`[Campaign] Simulated dial started for ${contact.name}. Waiting for answer/simulation.`);
+          let answered = false;
+          
+          for (let i = 0; i < 10; i++) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            if (activeCampaigns.get(campaignId) !== true) break;
+
+            const { data: updatedContact } = await supabase
+              .from('campaign_contacts')
+              .select('status')
+              .eq('id', contact.id)
+              .single();
+
+            if (updatedContact && (updatedContact.status === 'answered' || updatedContact.status === 'completed')) {
+              answered = true;
+              break;
+            }
+          }
+
+          if (answered) {
+            console.log(`[Campaign] Simulated call answered/active. Waiting for completion...`);
+            while (activeCampaigns.get(campaignId) === true) {
+              const { data: updatedContact } = await supabase
+                .from('campaign_contacts')
+                .select('status')
+                .eq('id', contact.id)
+                .single();
+
+              if (updatedContact && updatedContact.status === 'completed') {
+                break;
+              }
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          } else {
+            console.log(`[Campaign] No interactive connection. Auto-simulating completed call.`);
+            const mockDuration = Math.floor(Math.random() * 20) + 10;
+            
+            await supabase
+              .from('campaign_contacts')
+              .update({
+                status: 'completed',
+                duration_seconds: mockDuration,
+                call_sid: 'mock-call-sid-' + Math.random().toString(36).substring(7)
+              })
+              .eq('id', contact.id);
+
+            await supabase
+              .from('call_logs')
+              .insert({
+                organization_id: campaign.organization_id,
+                agent_id: campaign.agent_id,
+                from_phone_number: 'Campaign Auto-Dialer (Mock)',
+                to_phone_number: `${contact.name} (${contact.phone_number})`,
+                duration_seconds: mockDuration,
+                status: 'completed',
+                transcript: `[AGENT]: Hello ${contact.name}! I am calling to follow up on your request. How are you today?\n[USER]: Hi, I am doing well, thank you for calling.\n[AGENT]: Great to hear! Let me know if you need any assistance. Have a nice day!`,
+                cost: Number((mockDuration * 0.005).toFixed(4))
+              });
+          }
+        } else {
+          await supabase
+            .from('campaign_contacts')
+            .update({ call_sid: result.callSid })
+            .eq('id', contact.id);
+
+          console.log(`[Campaign] Real call initiated. SID: ${result.callSid}. Waiting for completion.`);
+          let callActive = true;
+          while (callActive && activeCampaigns.get(campaignId) === true) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const { data: updatedContact } = await supabase
+              .from('campaign_contacts')
+              .select('status')
+              .eq('id', contact.id)
+              .single();
+
+            if (updatedContact && ['completed', 'failed', 'busy', 'no-answer'].includes(updatedContact.status)) {
+              callActive = false;
+            }
+          }
+        }
+      } catch (dialErr) {
+        console.error(`[Campaign] Failed to dial ${contact.name}:`, dialErr);
+        await supabase
+          .from('campaign_contacts')
+          .update({ status: 'failed' })
+          .eq('id', contact.id);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  } catch (err) {
+    console.error(`[Campaign] Error in campaign queue loop for ${campaignId}:`, err);
+  } finally {
+    activeCampaigns.delete(campaignId);
+    console.log(`[Campaign] Finished queue loop for campaign ${campaignId}`);
+  }
+}
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -72,6 +267,125 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date() });
 });
 
+// Vobiz Outbound Answer webhook
+app.post('/api/vobiz/outbound-answer', async (req, res) => {
+  const { contactId, agentId } = req.query;
+  console.log(`[Vobiz Webhook] Outbound call answered for contactId=${contactId}, agentId=${agentId}`);
+
+  if (supabase && contactId) {
+    try {
+      await supabase
+        .from('campaign_contacts')
+        .update({ status: 'answered' })
+        .eq('id', contactId);
+    } catch (err) {
+      console.error('[Vobiz Webhook] Error updating status:', err);
+    }
+  }
+
+  const host = req.headers.host;
+  const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
+
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Speak voice="WOMAN" language="en-US">Connecting you to Aura Voice assistant...</Speak>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?contactId=${contactId}</Stream>
+</Response>`);
+});
+
+// Vobiz Events webhook
+app.post('/api/vobiz/events', async (req, res) => {
+  const { contactId } = req.query;
+  const { event, status } = req.body;
+  console.log(`[Vobiz Event] Call event: contactId=${contactId}, event=${event}, status=${status}`);
+
+  if (supabase && contactId) {
+    try {
+      let contactStatus = 'pending';
+      if (status === 'busy') contactStatus = 'busy';
+      else if (status === 'no-answer') contactStatus = 'no-answer';
+      else if (status === 'failed') contactStatus = 'failed';
+      else if (status === 'completed') contactStatus = 'completed';
+
+      if (contactStatus !== 'pending') {
+        await supabase
+          .from('campaign_contacts')
+          .update({ status: contactStatus })
+          .eq('id', contactId);
+      }
+    } catch (err) {
+      console.error('[Vobiz Event] Error updating status:', err);
+    }
+  }
+
+  res.status(200).send('OK');
+});
+
+// Start campaign API
+app.post('/api/campaigns/start', async (req, res) => {
+  const { campaignId } = req.body;
+  if (!campaignId) {
+    return res.status(400).json({ error: 'Missing campaignId' });
+  }
+
+  if (!supabase) {
+    return res.status(500).json({ error: 'Supabase client not initialized' });
+  }
+
+  try {
+    const { data: campaign, error } = await supabase
+      .from('campaigns')
+      .update({ status: 'running' })
+      .eq('id', campaignId)
+      .select()
+      .single();
+
+    if (error || !campaign) {
+      return res.status(404).json({ error: 'Campaign not found or failed to update' });
+    }
+
+    runCampaignQueue(campaignId);
+
+    return res.json({ success: true, campaign });
+  } catch (err) {
+    console.error('[Campaign API] Error starting campaign:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Pause campaign API
+app.post('/api/campaigns/pause', async (req, res) => {
+  const { campaignId } = req.body;
+  if (!campaignId) {
+    return res.status(400).json({ error: 'Missing campaignId' });
+  }
+
+  if (!supabase) {
+    return res.status(500).json({ error: 'Supabase client not initialized' });
+  }
+
+  try {
+    const { data: campaign, error } = await supabase
+      .from('campaigns')
+      .update({ status: 'paused' })
+      .eq('id', campaignId)
+      .select()
+      .single();
+
+    if (error || !campaign) {
+      return res.status(404).json({ error: 'Campaign not found or failed to update' });
+    }
+
+    activeCampaigns.set(campaignId, false);
+
+    return res.json({ success: true, campaign });
+  } catch (err) {
+    console.error('[Campaign API] Error pausing campaign:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // WebSocket connection routing logic
 server.on('upgrade', (request, socket, head) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
@@ -94,8 +408,9 @@ wss.on('connection', async (ws, request) => {
   if (!agentId && pathname.startsWith('/vobiz-stream/')) {
     agentId = pathname.split('/').pop();
   }
+  const contactId = url.searchParams.get('contactId');
   
-  console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}`);
+  console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}`);
 
   let agentConfig = {
     name: 'Aura Assistant',
@@ -143,6 +458,19 @@ wss.on('connection', async (ws, request) => {
   let transcript = [];
   let callStartTime = Date.now();
   let isSetupComplete = false;
+
+  // Mark contact as answered when socket connects (meaning webhook answered or browser simulator started)
+  if (supabase && contactId) {
+    try {
+      console.log(`[Campaign] Marking contact ${contactId} as answered`);
+      await supabase
+        .from('campaign_contacts')
+        .update({ status: 'answered' })
+        .eq('id', contactId);
+    } catch (err) {
+      console.error('[Campaign] Error updating contact answered status:', err);
+    }
+  }
 
   // On Gemini WS Open: Send Setup Session payload
   geminiWs.on('open', () => {
@@ -397,12 +725,17 @@ wss.on('connection', async (ws, request) => {
         
         const transcriptString = transcript.map(t => `[${t.role.toUpperCase()}]: ${t.text}`).join('\n') || 'No voice transcripts captured.';
         
+        let fromPhone = pathname === '/media-stream' ? 'Twilio SIP' : (pathname.startsWith('/vobiz-stream') ? 'Vobiz VoiceXML' : 'WebRTC Widget Client');
+        if (contactId) {
+          fromPhone = pathname.startsWith('/vobiz-stream') ? 'Vobiz Outbound' : 'WebRTC Outbound Simulator';
+        }
+
         const { error } = await supabase
           .from('call_logs')
           .insert({
             organization_id: agentConfig.organization_id,
             agent_id: agentConfig.id,
-            from_phone_number: pathname === '/media-stream' ? 'Twilio SIP' : (pathname === '/vobiz-stream' ? 'Vobiz VoiceXML' : 'WebRTC Widget Client'),
+            from_phone_number: fromPhone,
             to_phone_number: agentConfig.name,
             duration_seconds: callDuration,
             status: 'completed',
@@ -426,6 +759,23 @@ wss.on('connection', async (ws, request) => {
             
           if (usageErr) {
             console.error('[Supabase] Error incrementing usage:', usageErr.message);
+          }
+        }
+
+        // Update campaign contact status to completed if this was a campaign call
+        if (contactId) {
+          console.log(`[Campaign] Updating contact ${contactId} status to completed`);
+          const { error: updateErr } = await supabase
+            .from('campaign_contacts')
+            .update({
+              status: 'completed',
+              duration_seconds: callDuration,
+              call_sid: streamSid || 'simulated-sid'
+            })
+            .eq('id', contactId);
+
+          if (updateErr) {
+            console.error('[Campaign] Error updating campaign contact:', updateErr.message);
           }
         }
       } catch (err) {
