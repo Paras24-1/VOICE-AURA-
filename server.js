@@ -311,7 +311,7 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
-  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?contactId=${contactId}</Stream>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}/${contactId}</Stream>
 </Response>`);
 });
 
@@ -425,11 +425,20 @@ server.on('upgrade', (request, socket, head) => {
 wss.on('connection', async (ws, request) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const pathname = url.pathname;
+  
   let agentId = url.searchParams.get('agentId');
-  if (!agentId && pathname.startsWith('/vobiz-stream/')) {
-    agentId = pathname.split('/').pop();
+  let contactId = url.searchParams.get('contactId');
+
+  // Handle path-based routing for Vobiz streams (e.g. /vobiz-stream/agentId/contactId)
+  if (pathname.startsWith('/vobiz-stream/')) {
+    const segments = pathname.split('/').filter(Boolean); // e.g. ['vobiz-stream', 'agent-uuid', 'contact-uuid']
+    if (segments.length >= 2) {
+      agentId = segments[1];
+    }
+    if (segments.length >= 3) {
+      contactId = segments[2];
+    }
   }
-  const contactId = url.searchParams.get('contactId');
   
   console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}`);
 
