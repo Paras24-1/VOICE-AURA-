@@ -48,6 +48,12 @@ async function initiateVobizCall(contact, agentId) {
 
   const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/`;
 
+  // Clean phone numbers: remove spaces, dashes, parentheses, keep digits and leading '+'
+  const cleanedTo = contact.phone_number.replace(/[^\d+]/g, '');
+  const cleanedFrom = callerId.replace(/[^\d+]/g, '');
+
+  console.log(`[Vobiz] Placing outbound call: from=${cleanedFrom}, to=${cleanedTo}`);
+
   const response = await fetch(vobizUrl, {
     method: 'POST',
     headers: {
@@ -56,8 +62,8 @@ async function initiateVobizCall(contact, agentId) {
       'X-Auth-Token': authToken
     },
     body: JSON.stringify({
-      from: callerId,
-      to: contact.phone_number,
+      from: cleanedFrom,
+      to: cleanedTo,
       answer_url: answerUrl,
       answer_method: 'POST'
     })
