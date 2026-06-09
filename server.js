@@ -239,7 +239,7 @@ app.post('/api/twilio/incoming', async (req, res) => {
   res.type('text/xml');
   res.send(`<?xml version="1.5" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice" language="en-US">Connecting you to Aura Voice assistant...</Say>
+  <Say voice="alice" language="en-US">Connecting you to Vox AI...</Say>
   <Connect>
     <Stream url="${protocol}://${host}/media-stream?agentId=${agentId}" />
   </Connect>
@@ -257,7 +257,7 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Speak voice="WOMAN" language="en-US">Connecting you to Aura Voice assistant...</Speak>
+  <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
   <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}</Stream>
 </Response>`);
 });
@@ -289,7 +289,7 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Speak voice="WOMAN" language="en-US">Connecting you to Aura Voice assistant...</Speak>
+  <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
   <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?contactId=${contactId}</Stream>
 </Response>`);
 });
@@ -413,7 +413,7 @@ wss.on('connection', async (ws, request) => {
   console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}`);
 
   let agentConfig = {
-    name: 'Aura Assistant',
+    name: 'Vox Assistant',
     language: 'en',
     system_prompt: 'You are a helpful voice assistant. Be concise and conversational.',
     voice_id: 'models/gemini-3.1-flash-live-preview'
@@ -492,7 +492,7 @@ wss.on('connection', async (ws, request) => {
         systemInstruction: {
           parts: [
             {
-              text: agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Aura, an ultra-low latency voice agent.'
+              text: agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Vox, an ultra-low latency voice agent.'
             }
           ]
         },
