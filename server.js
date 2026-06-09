@@ -512,15 +512,18 @@ wss.on('connection', async (ws, request) => {
 
   // Mark contact as answered when socket connects (meaning webhook answered or browser simulator started)
   if (supabase && contactId) {
-    try {
-      console.log(`[Campaign] Marking contact ${contactId} as answered`);
-      await supabase
-        .from('campaign_contacts')
-        .update({ status: 'answered' })
-        .eq('id', contactId);
-    } catch (err) {
-      console.error('[Campaign] Error updating contact answered status:', err);
-    }
+    supabase
+      .from('campaign_contacts')
+      .update({ status: 'answered' })
+      .eq('id', contactId)
+      .then(({ error }) => {
+        if (error) {
+          console.error('[Campaign] Error updating contact answered status:', error.message);
+        }
+      })
+      .catch((err) => {
+        console.error('[Campaign] Error updating contact answered status:', err);
+      });
   }
 
   // On Gemini WS Open: Send Setup Session payload
