@@ -660,7 +660,8 @@ wss.on('connection', async (ws, request) => {
   // Handle incoming WebSocket messages from Client (Twilio or Browser WebRTC)
   ws.on('message', async (messageData) => {
     try {
-      console.log(`[WebSocket] Message received on path ${pathname}:`, messageData.toString().substring(0, 150));
+      // Commented out high-frequency logging to prevent Railway rate limits and improve network latency
+      // console.log(`[WebSocket] Message received on path ${pathname}:`, messageData.toString().substring(0, 150));
       if (pathname === '/media-stream' || pathname.startsWith('/vobiz-stream')) {
         const msg = JSON.parse(messageData.toString());
         
@@ -670,12 +671,12 @@ wss.on('connection', async (ws, request) => {
         }
         
         if (msg.event === 'start') {
-          streamSid = msg.start?.streamSid || msg.start?.streamId || 'vobiz-stream';
+          streamSid = msg.start?.streamSid || msg.start?.streamId || msg.streamId || 'vobiz-stream';
           global.vobizStartPayload = msg;
           console.log(`[Telephony] Call Media Stream Started. Payload:`, JSON.stringify(msg, null, 2));
           triggerGreeting();
         } else if (msg.event === 'media' && geminiWs.readyState === WebSocket.OPEN) {
-          if (!streamSid && msg.streamId) {
+          if ((!streamSid || streamSid === 'vobiz-stream') && msg.streamId) {
             streamSid = msg.streamId;
             triggerGreeting();
           }
