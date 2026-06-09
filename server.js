@@ -48,11 +48,23 @@ async function initiateVobizCall(contact, agentId) {
 
   const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/`;
 
+  let targetPhone = contact.phone_number || "";
+  let targetName = contact.name || "";
+
+  // Auto-recovery swap: if phone number is not valid (no digits) but name has digits, swap them
+  const phoneDigits = targetPhone.replace(/[^\d]/g, "");
+  const nameDigits = targetName.replace(/[^\d]/g, "");
+  if (phoneDigits.length < 7 && nameDigits.length >= 7) {
+    console.log(`[Vobiz] Auto-recovery: Swapping fields for contact ${contact.id}. (Phone was: "${targetPhone}", Name was: "${targetName}")`);
+    targetPhone = contact.name;
+    targetName = contact.phone_number;
+  }
+
   // Clean phone numbers: remove spaces, dashes, parentheses, keep digits and leading '+'
-  const cleanedTo = contact.phone_number.replace(/[^\d+]/g, '');
+  const cleanedTo = targetPhone.replace(/[^\d+]/g, '');
   const cleanedFrom = callerId.replace(/[^\d+]/g, '');
 
-  console.log(`[Vobiz] Placing outbound call: from=${cleanedFrom}, to=${cleanedTo}`);
+  console.log(`[Vobiz] Placing outbound call: from=${cleanedFrom}, to=${cleanedTo} (Contact Name: ${targetName})`);
 
   const response = await fetch(vobizUrl, {
     method: 'POST',
