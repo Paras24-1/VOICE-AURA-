@@ -488,6 +488,27 @@ wss.on('connection', async (ws, request) => {
   let transcript = [];
   let callStartTime = Date.now();
   let isSetupComplete = false;
+  let isGreetingSent = false;
+
+  const triggerGreeting = () => {
+    if (isGreetingSent) return;
+    if (isSetupComplete && streamSid) {
+      isGreetingSent = true;
+      const greetMessage = {
+        clientContent: {
+          turns: [
+            {
+              role: "user",
+              parts: [{ text: "Hello! Please introduce yourself briefly and ask how you can help me today." }]
+            }
+          ],
+          turnComplete: true
+        }
+      };
+      geminiWs.send(JSON.stringify(greetMessage));
+      console.log(`[Gemini] Sent initial greeting trigger for stream: ${streamSid}`);
+    }
+  };
 
   // Mark contact as answered when socket connects (meaning webhook answered or browser simulator started)
   if (supabase && contactId) {
@@ -563,21 +584,7 @@ wss.on('connection', async (ws, request) => {
       if (response.setupComplete) {
         isSetupComplete = true;
         console.log('[Gemini] setupComplete received successfully. Now ready to receive audio.');
-        
-        // Trigger initial greeting from Gemini to kickstart the conversation
-        const greetMessage = {
-          clientContent: {
-            turns: [
-              {
-                role: "user",
-                parts: [{ text: "Hello! Please introduce yourself briefly and ask how you can help me today." }]
-              }
-            ],
-            turnComplete: true
-          }
-        };
-        geminiWs.send(JSON.stringify(greetMessage));
-        console.log('[Gemini] Sent initial greeting trigger.');
+        triggerGreeting();
       }
       
       if (response.error) {
@@ -666,9 +673,11 @@ wss.on('connection', async (ws, request) => {
           streamSid = msg.start?.streamSid || msg.start?.streamId || 'vobiz-stream';
           global.vobizStartPayload = msg;
           console.log(`[Telephony] Call Media Stream Started. Payload:`, JSON.stringify(msg, null, 2));
+          triggerGreeting();
         } else if (msg.event === 'media' && geminiWs.readyState === WebSocket.OPEN) {
           if (!streamSid && msg.streamId) {
             streamSid = msg.streamId;
+            triggerGreeting();
           }
           if (!isSetupComplete) {
             // Drop packets received before setup is completed to prevent Gemini errors
