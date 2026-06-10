@@ -320,7 +320,8 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
 // Vobiz Transfer Callback webhook
 app.post('/api/vobiz/transfer-callback', async (req, res) => {
   const targetNumber = req.query.targetNumber || process.env.DEFAULT_HANDOVER_NUMBER || '+15555555555';
-  console.log(`[Vobiz Transfer Webhook] Transferring call to: ${targetNumber}`);
+  const callerId = process.env.VOBIZ_CALLER_ID || '';
+  console.log(`[Vobiz Transfer Webhook] Transferring call to: ${targetNumber}, callerId: ${callerId}`);
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   
@@ -328,7 +329,7 @@ app.post('/api/vobiz/transfer-callback', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Please hold while I connect you to a human agent...</Speak>
-  <Dial confirmSound="${protocol}://${host}/api/vobiz/whisper">
+  <Dial confirmKey="1" confirmSound="${protocol}://${host}/api/vobiz/whisper" callerId="${callerId}">
     <Number>${targetNumber}</Number>
   </Dial>
 </Response>`);
@@ -341,7 +342,7 @@ app.post('/api/vobiz/whisper', async (req, res) => {
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Speak voice="WOMAN" language="en-US">Incoming call transfer from the AI assistant. Connecting you now.</Speak>
+  <Speak voice="WOMAN" language="en-US">Incoming call transfer from the AI assistant. Press 1 to connect.</Speak>
 </Response>`);
 });
 
