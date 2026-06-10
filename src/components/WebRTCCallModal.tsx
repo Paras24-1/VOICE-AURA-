@@ -239,6 +239,10 @@ export default function WebRTCCallModal({ agentId, agentName, contactId, onClose
         const msg = JSON.parse(e.data as string);
         if (msg.event === "audio" && msg.payload) {
           playAudio(msg.payload, msg.sampleRate ?? 24000);
+        } else if (msg.event === "callTransferSimulated") {
+          setStatusText(`Transferred to ${msg.targetNumber}`);
+          setCallState("ended");
+          cleanup();
         }
       } catch {}
     };

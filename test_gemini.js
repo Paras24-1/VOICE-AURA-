@@ -10,7 +10,7 @@ if (!GEMINI_API_KEY) {
   console.error('Error: GEMINI_API_KEY is not defined in environment variables.');
   process.exit(1);
 }
-const geminiModel = 'models/gemini-2.5-flash';
+const geminiModel = 'models/gemini-2.0-flash-exp';
 const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
 
 console.log('Connecting to Gemini WebSocket (v1beta with gemini-2.5-flash)...');

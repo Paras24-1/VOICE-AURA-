@@ -270,7 +270,8 @@ app.post('/api/twilio/incoming', async (req, res) => {
 // VoiceXML Route for Vobiz inbound calls
 app.post('/api/vobiz/incoming', async (req, res) => {
   const agentId = req.query.agentId || 'default';
-  console.log(`[Vobiz] Incoming call received, routing to agent: ${agentId}`);
+  const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.CallUUID || req.query.call_uuid || '';
+  console.log(`[Vobiz] Incoming call received, routing to agent: ${agentId}, CallUUID: ${callUuid}`);
   
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
@@ -279,7 +280,7 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
-  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}</Stream>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?callUuid=${callUuid}</Stream>
 </Response>`);
 });
 
@@ -291,13 +292,14 @@ app.get('/health', (req, res) => {
 // Vobiz Outbound Answer webhook
 app.post('/api/vobiz/outbound-answer', async (req, res) => {
   const { contactId, agentId } = req.query;
-  console.log(`[Vobiz Webhook] Outbound call answered for contactId=${contactId}, agentId=${agentId}`);
+  const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.call_uuid || req.query.CallUUID || '';
+  console.log(`[Vobiz Webhook] Outbound call answered for contactId=${contactId}, agentId=${agentId}, CallUUID=${callUuid}`);
 
   if (supabase && contactId) {
     try {
       await supabase
         .from('campaign_contacts')
-        .update({ status: 'answered' })
+        .update({ status: 'answered', call_sid: callUuid })
         .eq('id', contactId);
     } catch (err) {
       console.error('[Vobiz Webhook] Error updating status:', err);
@@ -311,9 +313,36 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
-  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}/${contactId}</Stream>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}/${contactId}?callUuid=${callUuid}</Stream>
 </Response>`);
 });
+
+// Vobiz Transfer Callback webhook
+app.post('/api/vobiz/transfer-callback', async (req, res) => {
+  const targetNumber = req.query.targetNumber || process.env.DEFAULT_HANDOVER_NUMBER || '+15555555555';
+  console.log(`[Vobiz Transfer Webhook] Transferring call to: ${targetNumber}`);
+  const host = req.headers.host;
+  const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Speak voice="WOMAN" language="en-US">Please hold while I connect you to a human agent...</Speak>
+  <Dial confirmSound="${protocol}://${host}/api/vobiz/whisper">${targetNumber}</Dial>
+</Response>`);
+});
+
+// Vobiz Whisper webhook
+app.post('/api/vobiz/whisper', async (req, res) => {
+  console.log(`[Vobiz Whisper Webhook] Playing voice whisper to human agent.`);
+  
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Speak voice="WOMAN" language="en-US">Incoming call transfer from the AI assistant. Connecting you now.</Speak>
+</Response>`);
+});
+
 
 // Vobiz Events webhook
 app.post('/api/vobiz/events', async (req, res) => {
@@ -428,6 +457,7 @@ wss.on('connection', async (ws, request) => {
   
   let agentId = url.searchParams.get('agentId');
   let contactId = url.searchParams.get('contactId');
+  let callSid = url.searchParams.get('callSid') || url.searchParams.get('callUuid');
 
   // Handle path-based routing for Vobiz streams (e.g. /vobiz-stream/agentId/contactId)
   if (pathname.startsWith('/vobiz-stream/')) {
@@ -440,7 +470,24 @@ wss.on('connection', async (ws, request) => {
     }
   }
   
-  console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}`);
+  console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}, CallSid=${callSid}`);
+
+  // Fetch callSid from database as fallback for outbound campaign calls if not in query params
+  if (!callSid && contactId && supabase) {
+    try {
+      const { data } = await supabase
+        .from('campaign_contacts')
+        .select('call_sid')
+        .eq('id', contactId)
+        .single();
+      if (data && data.call_sid) {
+        callSid = data.call_sid;
+        console.log(`[WebSocket] Resolved callSid ${callSid} from database for contactId=${contactId}`);
+      }
+    } catch (e) {
+      console.error('[WebSocket] Error resolving callSid from database:', e);
+    }
+  }
 
   let agentConfig = {
     name: 'Vox Assistant',
@@ -543,10 +590,27 @@ wss.on('connection', async (ws, request) => {
             }
           }
         },
+        tools: [{
+          functionDeclarations: [{
+            name: "transferCall",
+            description: "Transfer the active telephone call to a human agent/support representative when requested by the caller.",
+            parameters: {
+              type: "object",
+              properties: {
+                targetNumber: {
+                  type: "string",
+                  description: "The phone number to transfer the call to. By default, it will be the default support agent number if not provided."
+                }
+              },
+              required: []
+            }
+          }]
+        }],
         systemInstruction: {
           parts: [
             {
-              text: agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Vox, an ultra-low latency voice agent.'
+              text: (agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Vox, an ultra-low latency voice agent.') +
+                    '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.'
             }
           ]
         },
@@ -560,9 +624,101 @@ wss.on('connection', async (ws, request) => {
   });
 
   // Handle message response from Gemini (audio data out)
-  geminiWs.on('message', (messageData) => {
+  geminiWs.on('message', async (messageData) => {
     try {
       const response = JSON.parse(messageData.toString());
+      
+      // Handle tool calls from Gemini
+      if (response.toolCall && response.toolCall.functionCalls) {
+        console.log(`[Gemini ToolCall] Received function calls:`, JSON.stringify(response.toolCall.functionCalls));
+        const functionResponses = [];
+        
+        for (const fc of response.toolCall.functionCalls) {
+          if (fc.name === 'transferCall') {
+            const targetNumber = fc.args.targetNumber || process.env.DEFAULT_HANDOVER_NUMBER || '+15555555555';
+            console.log(`[Gemini ToolCall] Initiating call transfer to ${targetNumber} for callSid=${callSid}, pathname=${pathname}`);
+            
+            let success = false;
+            let errorMsg = '';
+            
+            try {
+              if (pathname.startsWith('/vobiz-stream')) {
+                const authId = process.env.VOBIZ_AUTH_ID;
+                const authToken = process.env.VOBIZ_AUTH_TOKEN;
+                
+                if (!authId || !authToken) {
+                  throw new Error('Vobiz credentials not configured');
+                }
+                
+                if (!callSid || callSid === 'vobiz-stream') {
+                  throw new Error('Valid Call UUID not available for transfer');
+                }
+                
+                const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
+                const protocol = request.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+                const redirectUrl = `${protocol}://${host}/api/vobiz/transfer-callback?targetNumber=${encodeURIComponent(targetNumber)}`;
+                const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callSid}/`;
+                
+                console.log(`[Vobiz Transfer] Updating call ${callSid} with answer_url=${redirectUrl}`);
+                
+                const vobizResponse = await fetch(vobizUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-Auth-ID': authId,
+                    'X-Auth-Token': authToken
+                  },
+                  body: JSON.stringify({
+                    answer_url: redirectUrl,
+                    answer_method: 'POST'
+                  })
+                });
+                
+                if (!vobizResponse.ok) {
+                  const errText = await vobizResponse.text();
+                  throw new Error(`Vobiz API returned ${vobizResponse.status}: ${errText}`);
+                }
+                
+                console.log(`[Vobiz Transfer] Call ${callSid} redirected successfully to ${targetNumber}`);
+                success = true;
+              } else if (pathname === '/webRTC-stream') {
+                // WebRTC Simulator transfer
+                ws.send(JSON.stringify({
+                  event: 'callTransferSimulated',
+                  targetNumber: targetNumber
+                }));
+                console.log(`[WebRTC Transfer] Simulated transfer to ${targetNumber} triggered`);
+                success = true;
+              } else {
+                throw new Error(`Unsupported stream path for transfer: ${pathname}`);
+              }
+            } catch (err) {
+              console.error(`[Transfer Error] Failed to transfer call:`, err);
+              errorMsg = err.message;
+            }
+            
+            functionResponses.push({
+              name: fc.name,
+              id: fc.id,
+              response: {
+                output: {
+                  success: success,
+                  message: success ? `Call successfully transferred to ${targetNumber}` : `Failed to transfer call: ${errorMsg}`
+                }
+              }
+            });
+          }
+        }
+        
+        // Send tool response back to Gemini
+        const toolResponseMsg = {
+          toolResponse: {
+            functionResponses: functionResponses
+          }
+        };
+        geminiWs.send(JSON.stringify(toolResponseMsg));
+        console.log(`[Gemini ToolCall] Sent function response back to Gemini:`, JSON.stringify(toolResponseMsg));
+      }
       
       // Capture live transcription segments from Gemini
       if (response.serverContent?.inputTranscription?.text) {
