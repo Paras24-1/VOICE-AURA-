@@ -655,11 +655,12 @@ wss.on('connection', async (ws, request) => {
                 }
                 
                 const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
+                const cleanHost = host.replace(/^https?:\/\//, '');
                 const protocol = request.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-                const redirectUrl = `${protocol}://${host}/api/vobiz/transfer-callback?targetNumber=${encodeURIComponent(targetNumber)}`;
+                const redirectUrl = `${protocol}://${cleanHost}/api/vobiz/transfer-callback?targetNumber=${encodeURIComponent(targetNumber)}`;
                 const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callSid}/`;
                 
-                console.log(`[Vobiz Transfer] Updating call ${callSid} with answer_url=${redirectUrl}`);
+                console.log(`[Vobiz Transfer] Updating call ${callSid} with aleg_url=${redirectUrl}`);
                 
                 const vobizResponse = await fetch(vobizUrl, {
                   method: 'POST',
@@ -669,8 +670,9 @@ wss.on('connection', async (ws, request) => {
                     'X-Auth-Token': authToken
                   },
                   body: JSON.stringify({
-                    answer_url: redirectUrl,
-                    answer_method: 'POST'
+                    legs: 'aleg',
+                    aleg_url: redirectUrl,
+                    aleg_method: 'POST'
                   })
                 });
                 
