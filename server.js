@@ -328,7 +328,9 @@ app.post('/api/vobiz/transfer-callback', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Please hold while I connect you to a human agent...</Speak>
-  <Dial confirmSound="${protocol}://${host}/api/vobiz/whisper">${targetNumber}</Dial>
+  <Dial confirmSound="${protocol}://${host}/api/vobiz/whisper">
+    <Number>${targetNumber}</Number>
+  </Dial>
 </Response>`);
 });
 
