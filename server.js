@@ -39,7 +39,7 @@ async function initiateVobizCall(contact, agentId) {
   const authToken = process.env.VOBIZ_AUTH_TOKEN;
   const callerId = process.env.VOBIZ_CALLER_ID;
   const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
-  const answerUrl = `${host}/api/vobiz/outbound-answer?contactId=${contact.id}&agentId=${agentId}`;
+  const answerUrl = `${host}/api/vobiz/outbound-answer?agentId=${agentId}${contact.id ? `&contactId=${contact.id}` : ''}`;
 
   if (!authId || !authToken || !callerId) {
     console.log(`[Vobiz] Missing credentials (VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN, or VOBIZ_CALLER_ID). Simulating call to ${contact.phone_number}`);
@@ -55,7 +55,7 @@ async function initiateVobizCall(contact, agentId) {
   const phoneDigits = targetPhone.replace(/[^\d]/g, "");
   const nameDigits = targetName.replace(/[^\d]/g, "");
   if (phoneDigits.length < 7 && nameDigits.length >= 7) {
-    console.log(`[Vobiz] Auto-recovery: Swapping fields for contact ${contact.id}. (Phone was: "${targetPhone}", Name was: "${targetName}")`);
+    console.log(`[Vobiz] Auto-recovery: Swapping fields for contact ${contact.id || 'direct'}. (Phone was: "${targetPhone}", Name was: "${targetName}")`);
     targetPhone = contact.name;
     targetName = contact.phone_number;
   }
@@ -295,7 +295,7 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
   const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.call_uuid || req.query.CallUUID || '';
   console.log(`[Vobiz Webhook] Outbound call answered for contactId=${contactId}, agentId=${agentId}, CallUUID=${callUuid}`);
 
-  if (supabase && contactId) {
+  if (supabase && contactId && contactId !== 'direct') {
     try {
       await supabase
         .from('campaign_contacts')
@@ -313,7 +313,7 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
-  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}/${contactId}?callUuid=${callUuid}</Stream>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}/${contactId || 'direct'}?callUuid=${callUuid}</Stream>
 </Response>`);
 });
 
@@ -353,7 +353,7 @@ app.post('/api/vobiz/events', async (req, res) => {
   const { event, status } = req.body;
   console.log(`[Vobiz Event] Call event: contactId=${contactId}, event=${event}, status=${status}`);
 
-  if (supabase && contactId) {
+  if (supabase && contactId && contactId !== 'direct') {
     try {
       let contactStatus = 'pending';
       if (status === 'busy') contactStatus = 'busy';
@@ -439,6 +439,35 @@ app.post('/api/campaigns/pause', async (req, res) => {
   }
 });
 
+// Trigger direct call endpoint (useful for n8n flow integrations)
+app.post('/api/calls/trigger', async (req, res) => {
+  const { phone_number, name, agentId } = req.body;
+  if (!phone_number) {
+    return res.status(400).json({ error: 'Missing phone_number in request body' });
+  }
+  
+  const targetAgentId = agentId || 'default';
+  console.log(`[Trigger Call API] Received request to dial ${phone_number} (Name: ${name || 'N/A'}) for agent: ${targetAgentId}`);
+
+  try {
+    const contact = {
+      phone_number: phone_number,
+      name: name || 'Direct Call Lead'
+    };
+    
+    const result = await initiateVobizCall(contact, targetAgentId);
+    return res.json({
+      success: true,
+      message: result.simulated ? 'Simulated call triggered successfully' : 'Real outbound call initiated successfully',
+      callSid: result.callSid || 'simulated',
+      simulated: result.simulated
+    });
+  } catch (err) {
+    console.error('[Trigger Call API] Error triggering call:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // WebSocket connection routing logic
 server.on('upgrade', (request, socket, head) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
@@ -476,7 +505,7 @@ wss.on('connection', async (ws, request) => {
   console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}, CallSid=${callSid}`);
 
   // Fetch callSid from database as fallback for outbound campaign calls if not in query params
-  if (!callSid && contactId && supabase) {
+  if (!callSid && contactId && contactId !== 'direct' && supabase) {
     try {
       const { data } = await supabase
         .from('campaign_contacts')
@@ -561,7 +590,7 @@ wss.on('connection', async (ws, request) => {
   };
 
   // Mark contact as answered when socket connects (meaning webhook answered or browser simulator started)
-  if (supabase && contactId) {
+  if (supabase && contactId && contactId !== 'direct') {
     supabase
       .from('campaign_contacts')
       .update({ status: 'answered' })
@@ -941,7 +970,7 @@ wss.on('connection', async (ws, request) => {
         const transcriptString = transcript.map(t => `[${t.role.toUpperCase()}]: ${t.text}`).join('\n') || 'No voice transcripts captured.';
         
         let fromPhone = pathname === '/media-stream' ? 'Twilio SIP' : (pathname.startsWith('/vobiz-stream') ? 'Vobiz VoiceXML' : 'WebRTC Widget Client');
-        if (contactId) {
+        if (contactId && contactId !== 'direct') {
           fromPhone = pathname.startsWith('/vobiz-stream') ? 'Vobiz Outbound' : 'WebRTC Outbound Simulator';
         }
 
@@ -978,7 +1007,7 @@ wss.on('connection', async (ws, request) => {
         }
 
         // Update campaign contact status to completed if this was a campaign call
-        if (contactId) {
+        if (contactId && contactId !== 'direct') {
           console.log(`[Campaign] Updating contact ${contactId} status to completed`);
           const { error: updateErr } = await supabase
             .from('campaign_contacts')
