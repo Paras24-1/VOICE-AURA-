@@ -26,6 +26,7 @@ interface Stats {
   totalMinutes: number;
   minutesLimit: number;
   avgDuration: number;
+  totalCost: number;
 }
 
 export default function DashboardPage() {
@@ -33,7 +34,7 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
-  const [stats, setStats] = useState<Stats>({ totalCalls: 0, totalMinutes: 0, minutesLimit: 1000, avgDuration: 0 });
+  const [stats, setStats] = useState<Stats>({ totalCalls: 0, totalMinutes: 0, minutesLimit: 1000, avgDuration: 0, totalCost: 0 });
   const [loading, setLoading] = useState(true);
 
 
@@ -70,34 +71,30 @@ export default function DashboardPage() {
         .order("created_at", { ascending: false })
         .limit(50);
 
-      // Fetch usage records for minutes
-      const { data: usage } = await supabase
-        .from("usage_records")
-        .select("amount")
-        .eq("organization_id", currentOrgId)
-        .eq("metric", "call_minutes");
-
-      // Fetch subscription for limits
-      const { data: subscription } = await supabase
-        .from("subscriptions")
-        .select("price_id, status")
-        .eq("organization_id", currentOrgId)
-        .single();
+      // Fetch all call logs for exact duration and cost calculation
+      const { data: allLogsForBilling } = await supabase
+        .from("call_logs")
+        .select("duration_seconds, cost")
+        .eq("organization_id", currentOrgId);
 
       const logsArr = logs || [];
-      const totalMinutes = (usage || []).reduce((sum: number, r: { amount: number }) => sum + r.amount, 0);
+      const totalDurationSeconds = (allLogsForBilling || []).reduce((sum: number, l) => sum + (l.duration_seconds || 0), 0);
+      const totalMinutes = totalDurationSeconds / 60;
+      const totalCost = (allLogsForBilling || []).reduce((sum: number, l) => sum + (Number(l.cost) || 0), 0);
       const avgDuration = logsArr.length > 0
         ? Math.round(logsArr.reduce((s: number, l: CallLog) => s + (l.duration_seconds || 0), 0) / logsArr.length)
         : 0;
 
-      // Determine limit from subscription tier
-      let minutesLimit = 1000;
-      if (subscription?.status === "active") {
-        minutesLimit = subscription.price_id?.includes("pro") ? 5000 : subscription.price_id?.includes("enterprise") ? 99999 : 1000;
-      }
+      const minutesLimit = 600; // 600 free minutes limit
 
       setCallLogs(logsArr);
-      setStats({ totalCalls: logsArr.length, totalMinutes, minutesLimit, avgDuration });
+      setStats({
+        totalCalls: logsArr.length,
+        totalMinutes: Number(totalMinutes.toFixed(2)),
+        minutesLimit,
+        avgDuration,
+        totalCost: Number(totalCost.toFixed(2))
+      });
     } catch (err) {
       console.error("Failed to fetch dashboard data:", err);
     } finally {
@@ -244,7 +241,13 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="text-[11px] text-zinc-400">
-              Of <span className="font-mono text-zinc-300 font-bold">{stats.minutesLimit.toLocaleString()}</span> minute allocation.
+              {stats.totalCost > 0 ? (
+                <span className="text-emerald-400 font-semibold font-mono">
+                  Charges: ₹{stats.totalCost.toFixed(2)}
+                </span>
+              ) : (
+                <>Of <span className="font-mono text-zinc-300 font-bold">{stats.minutesLimit.toLocaleString()}</span> free mins.</>
+              )}
             </div>
           </div>
         </div>
@@ -396,7 +399,7 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <span className="text-[10px] font-mono text-zinc-500 uppercase block">Cost</span>
-                  <span className="text-xs font-semibold text-emerald-400 font-mono block mt-0.5">${(selectedCall.cost || 0).toFixed(4)}</span>
+                  <span className="text-xs font-semibold text-emerald-400 font-mono block mt-0.5">₹{(selectedCall.cost || 0).toFixed(2)}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-mono text-zinc-500 uppercase block">From</span>

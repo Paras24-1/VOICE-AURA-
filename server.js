@@ -194,6 +194,34 @@ async function runCampaignQueue(campaignId) {
               })
               .eq('id', contact.id);
 
+            // Fetch previous calls for billing calculations
+            let prevTotalSeconds = 0;
+            const { data: previousCalls, error: prevErr } = await supabase
+              .from('call_logs')
+              .select('duration_seconds')
+              .eq('organization_id', campaign.organization_id);
+              
+            if (!prevErr && previousCalls) {
+              prevTotalSeconds = previousCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+            }
+
+            const FREE_SECONDS_LIMIT = 600 * 60; // 600 minutes
+            const RATE_PER_MINUTE = 3.5; // ₹3.5/min
+            const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
+            
+            let calculatedCost = 0;
+            const newTotalSeconds = prevTotalSeconds + mockDuration;
+            
+            if (prevTotalSeconds >= FREE_SECONDS_LIMIT) {
+              calculatedCost = mockDuration * RATE_PER_SECOND;
+            } else if (newTotalSeconds > FREE_SECONDS_LIMIT) {
+              const billableSeconds = newTotalSeconds - FREE_SECONDS_LIMIT;
+              calculatedCost = billableSeconds * RATE_PER_SECOND;
+            } else {
+              calculatedCost = 0;
+            }
+            const finalCost = Number(calculatedCost.toFixed(4));
+
             await supabase
               .from('call_logs')
               .insert({
@@ -204,7 +232,7 @@ async function runCampaignQueue(campaignId) {
                 duration_seconds: mockDuration,
                 status: 'completed',
                 transcript: `[AGENT]: Hello ${contact.name}! I am calling to follow up on your request. How are you today?\n[USER]: Hi, I am doing well, thank you for calling.\n[AGENT]: Great to hear! Let me know if you need any assistance. Have a nice day!`,
-                cost: Number((mockDuration * 0.005).toFixed(4))
+                cost: finalCost
               });
           }
         } else {
@@ -974,6 +1002,38 @@ wss.on('connection', async (ws, request) => {
           fromPhone = pathname.startsWith('/vobiz-stream') ? 'Vobiz Outbound' : 'WebRTC Outbound Simulator';
         }
 
+        // Fetch previous call records to compute dynamic billing cost
+        let prevTotalSeconds = 0;
+        const { data: previousCalls, error: prevErr } = await supabase
+          .from('call_logs')
+          .select('duration_seconds')
+          .eq('organization_id', agentConfig.organization_id);
+          
+        if (!prevErr && previousCalls) {
+          prevTotalSeconds = previousCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+        } else if (prevErr) {
+          console.error('[Supabase] Error fetching previous call logs for billing:', prevErr.message);
+        }
+
+        const FREE_SECONDS_LIMIT = 600 * 60; // 36,000 seconds (600 minutes)
+        const RATE_PER_MINUTE = 3.5; // ₹3.5/min
+        const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
+        
+        let calculatedCost = 0;
+        const newTotalSeconds = prevTotalSeconds + callDuration;
+        
+        if (prevTotalSeconds >= FREE_SECONDS_LIMIT) {
+          calculatedCost = callDuration * RATE_PER_SECOND;
+        } else if (newTotalSeconds > FREE_SECONDS_LIMIT) {
+          const billableSeconds = newTotalSeconds - FREE_SECONDS_LIMIT;
+          calculatedCost = billableSeconds * RATE_PER_SECOND;
+        } else {
+          calculatedCost = 0;
+        }
+        
+        const finalCost = Number(calculatedCost.toFixed(4));
+        console.log(`[Billing] Org: ${agentConfig.organization_id}. Prev duration: ${prevTotalSeconds}s. Call duration: ${callDuration}s. New total: ${newTotalSeconds}s. Calculated Cost: ₹ ${finalCost}`);
+
         const { error } = await supabase
           .from('call_logs')
           .insert({
@@ -984,7 +1044,7 @@ wss.on('connection', async (ws, request) => {
             duration_seconds: callDuration,
             status: 'completed',
             transcript: transcriptString,
-            cost: Number((callDuration * 0.005).toFixed(4)) // Mocking $0.005 per second of LLM + audio synthesis
+            cost: finalCost
           });
           
         if (error) {

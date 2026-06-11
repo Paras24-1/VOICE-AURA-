@@ -29,64 +29,150 @@ interface PricingTier {
   stripePriceId: string;
 }
 
-interface Invoice {
+interface BilledCall {
   id: string;
   date: string;
+  duration: string;
   amount: string;
-  status: "paid" | "failed" | "pending";
-  tierName: string;
+  status: string;
+  fromPhone: string;
 }
 
 export default function BillingPage() {
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [loadingPortal, setLoadingPortal] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState("pro"); // Mock current user plan: "pro"
+  const [currentPlan, setCurrentPlan] = useState("free"); 
+  const [totalSeconds, setTotalSeconds] = useState(0);
+  const [totalCost, setTotalCost] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([]);
-  const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([]);
+  const [recentBilledCalls, setRecentBilledCalls] = useState<BilledCall[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
-      const supabase = createClient();
-      // Fetch pricing tiers (subscriptions) for current user organization
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      // Get organization id via membership
-      const { data: membership } = await supabase.from('organization_members').select('organization_id').eq('profile_id', user.id).single();
-      if (!membership) return;
-      const { data: subs, error: subsErr } = await supabase.from('subscriptions').select('id, price_id, status, created_at').eq('organization_id', membership.organization_id);
-      if (subsErr) {
-        console.error('Failed to fetch subscriptions', subsErr);
-        return;
+      setLoading(true);
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        
+        const { data: membership } = await supabase
+          .from('organization_members')
+          .select('organization_id')
+          .eq('profile_id', user.id)
+          .single();
+          
+        if (!membership) return;
+        const orgId = membership.organization_id;
+
+        // Fetch all completed call logs to compute exact duration & accumulated cost
+        const { data: logs, error: logsErr } = await supabase
+          .from('call_logs')
+          .select('id, duration_seconds, cost, created_at, from_phone_number')
+          .eq('organization_id', orgId);
+
+        if (logsErr) {
+          console.error('Failed to fetch call logs:', logsErr.message);
+          return;
+        }
+
+        const calculatedSeconds = (logs || []).reduce((sum, log) => sum + (log.duration_seconds || 0), 0);
+        const calculatedCost = (logs || []).reduce((sum, log) => sum + (Number(log.cost) || 0), 0);
+
+        setTotalSeconds(calculatedSeconds);
+        setTotalCost(calculatedCost);
+        
+        // Determine current plan based on 600-minute threshold
+        const hasExceededFreeLimit = calculatedSeconds >= (600 * 60);
+        setCurrentPlan(hasExceededFreeLimit ? "paygo" : "free");
+
+        // Define our custom pricing tiers structure statically
+        const staticTiers: PricingTier[] = [
+          {
+            id: "free",
+            name: "Free Trial Plan",
+            price: "₹0",
+            frequency: "600 mins",
+            description: "Default starting plan for all new users. Includes 600 free minutes of voice streaming.",
+            features: [
+              "600 minutes of real-time voice streams",
+              "Low latency LLM-powered response node",
+              "Basic call routing & transfer",
+              "Standard dashboard log access"
+            ],
+            ctaText: "Active Tier",
+            popular: false,
+            stripePriceId: "price_free"
+          },
+          {
+            id: "paygo",
+            name: "Aura Pay-As-You-Go",
+            price: "₹3.5",
+            frequency: "minute",
+            description: "Automatically billed on seconds-level increments after free quota is consumed.",
+            features: [
+              "Charged at ₹3.5 per call minute",
+              "Unlimited minutes allocation",
+              "Access to custom voice clones",
+              "Priority agent response routing",
+              "Detailed cost inspector"
+            ],
+            ctaText: "Upgrade / Active",
+            popular: true,
+            badge: "Flexible Usage",
+            stripePriceId: "price_paygo"
+          },
+          {
+            id: "enterprise",
+            name: "Enterprise SLA",
+            price: "Custom",
+            frequency: "",
+            description: "For high-volume centers requiring dedicated server capacity and custom models.",
+            features: [
+              "Volume discount minute pricing",
+              "Dedicated WebRTC gateway nodes",
+              "Custom local TTS/STT training",
+              "24/7 priority support and SLA",
+              "Custom webhook & CRM triggers"
+            ],
+            ctaText: "Contact Sales",
+            popular: false,
+            stripePriceId: "price_enterprise"
+          }
+        ];
+        
+        setPricingTiers(staticTiers);
+
+        // Fetch recent call logs with cost > 0 to populate transaction history
+        const { data: billedCalls, error: billedErr } = await supabase
+          .from('call_logs')
+          .select('id, created_at, duration_seconds, cost, from_phone_number')
+          .eq('organization_id', orgId)
+          .gt('cost', 0)
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (!billedErr && billedCalls) {
+          const list = billedCalls.map((c) => {
+            const m = Math.floor((c.duration_seconds || 0) / 60);
+            const s = (c.duration_seconds || 0) % 60;
+            return {
+              id: c.id.substring(0, 16),
+              date: new Date(c.created_at).toLocaleDateString(),
+              duration: `${m}m ${s}s`,
+              amount: `₹${Number(c.cost).toFixed(2)}`,
+              status: "Billed",
+              fromPhone: c.from_phone_number || "Call"
+            };
+          });
+          setRecentBilledCalls(list);
+        }
+      } catch (err) {
+        console.error("Failed to load billing metrics:", err);
+      } finally {
+        setLoading(false);
       }
-      // Map to PricingTier shape (placeholder mapping)
-      const tiers = subs.map((sub) => ({
-        id: sub.id,
-        name: sub.price_id ?? 'Custom',
-        price: `$${sub.price_id?.replace('price_', '') ?? '0'}`,
-        frequency: 'month',
-        description: 'Your subscription details',
-        features: [],
-        ctaText: 'Manage Subscription',
-        popular: false,
-        stripePriceId: sub.price_id,
-        badge: undefined,
-      }));
-      setPricingTiers(tiers);
-      // Fetch recent invoices (assuming a view exists)
-      const { data: invoices, error: invErr } = await supabase.from('invoices').select('id, created_at, total_amount, status, subscription_id').eq('organization_id', membership.organization_id).order('created_at', { ascending: false }).limit(5);
-      if (invErr) {
-        console.error('Failed to fetch invoices', invErr);
-        return;
-      }
-      const invoiceList = invoices.map((inv) => ({
-        id: inv.id,
-        date: new Date(inv.created_at).toLocaleDateString(),
-        amount: `$${inv.total_amount}`,
-        status: inv.status,
-        tierName: inv.subscription_id,
-      }));
-      setRecentInvoices(invoiceList);
     };
     fetchData();
   }, []);
@@ -181,7 +267,7 @@ export default function BillingPage() {
               Active Billing Node Quota Usage
             </h2>
             <span className="text-xs text-zinc-400 font-mono">
-              Renews on <strong className="text-zinc-200">June 15, 2026</strong>
+              Quota Limit: <strong className="text-zinc-200">600 mins free</strong>
             </span>
           </div>
 
@@ -193,12 +279,26 @@ export default function BillingPage() {
                   Voice Agent Streaming Minutes
                 </span>
                 <span className="font-mono text-zinc-400">
-                  <strong className="text-white">4,210</strong> / 5,000 mins (84.2%)
+                  {loading ? (
+                    "Calculating..."
+                  ) : (
+                    <>
+                      <strong className="text-white">
+                        {Math.floor(totalSeconds / 60)}m {totalSeconds % 60}s
+                      </strong>{" "}
+                      / 600 mins (
+                      {Math.min(((totalSeconds / (600 * 60)) * 100), 100).toFixed(1)}
+                      %)
+                    </>
+                  )}
                 </span>
               </div>
               {/* Progress bar */}
               <div className="w-full bg-zinc-950 rounded-full h-2.5 border border-zinc-900 overflow-hidden">
-                <div className="bg-gradient-to-r from-violet-600 to-indigo-500 h-full w-[84.2%] rounded-full" />
+                <div 
+                  className="bg-gradient-to-r from-violet-600 to-indigo-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(((totalSeconds / (600 * 60)) * 100), 100)}%` }}
+                />
               </div>
             </div>
 
@@ -207,11 +307,11 @@ export default function BillingPage() {
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <span className="font-medium text-zinc-300">Active Custom Voice Clones</span>
                 <span className="font-mono text-zinc-400">
-                  <strong className="text-white">3</strong> / 5 Clones (60%)
+                  <strong className="text-white">1</strong> / 5 Clones (20%)
                 </span>
               </div>
               <div className="w-full bg-zinc-950 rounded-full h-2.5 border border-zinc-900 overflow-hidden">
-                <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full w-[60%] rounded-full" />
+                <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full w-[20%] rounded-full" />
               </div>
             </div>
           </div>
@@ -225,7 +325,7 @@ export default function BillingPage() {
             </span>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xl font-heading font-extrabold text-white">
-                Pro Premium Plan
+                {loading ? "Loading..." : (currentPlan === "free" ? "Free Trial Plan" : "Pay-As-You-Go Tier")}
               </span>
               <span className="text-[10px] font-mono bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-bold">
                 Active Node
@@ -235,12 +335,14 @@ export default function BillingPage() {
 
           <div className="space-y-2 border-t border-zinc-900 pt-4 mt-4">
             <div className="flex justify-between text-xs text-zinc-400">
-              <span>Next Renewal Cost:</span>
-              <span className="font-mono text-zinc-200 font-bold">$199.00 USD</span>
+              <span>Accumulated Charges:</span>
+              <span className="font-mono text-emerald-400 font-bold">
+                ₹{loading ? "0.00" : totalCost.toFixed(2)}
+              </span>
             </div>
             <div className="flex justify-between text-xs text-zinc-400">
-              <span>WebRTC Server Regions:</span>
-              <span className="text-zinc-200">Global (US/EU/AP)</span>
+              <span>Billing Rate:</span>
+              <span className="text-zinc-200 font-mono">₹3.5 / min (exceeded)</span>
             </div>
           </div>
         </div>
@@ -315,7 +417,7 @@ export default function BillingPage() {
                 <div className="mt-8 pt-4">
                   <button
                     onClick={() => handleSubscribe(tier)}
-                    disabled={loadingTier === tier.id}
+                    disabled={loadingTier === tier.id || isCurrent}
                     className={`w-full py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       isCurrent
                         ? "bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white"
@@ -349,7 +451,7 @@ export default function BillingPage() {
       <div className="space-y-6">
         <h2 className="font-heading text-lg font-bold text-white tracking-tight flex items-center gap-2">
           <Clock className="w-5 h-5 text-zinc-400" />
-          Receipt Billing Log History
+          Recent Metered Call Transactions
         </h2>
 
         <div className="glass-panel rounded-2xl overflow-hidden border border-zinc-800">
@@ -357,45 +459,47 @@ export default function BillingPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-zinc-950/80 border-b border-zinc-900 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
-                  <th className="px-6 py-4">Invoice Reference ID</th>
+                  <th className="px-6 py-4">Session Reference ID</th>
                   <th className="px-6 py-4">Transaction Date</th>
-                  <th className="px-6 py-4">Tier Subscribed</th>
-                  <th className="px-6 py-4">Amount Charged</th>
+                  <th className="px-6 py-4">From Agent/Device</th>
+                  <th className="px-6 py-4">Duration</th>
                   <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-right">Receipt Actions</th>
+                  <th className="px-6 py-4 text-right">Amount Charged</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-900/60 text-xs">
-                {recentInvoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-zinc-900/10 transition-colors">
-                    <td className="px-6 py-4 font-mono font-bold text-zinc-300">
-                      {inv.id}
-                    </td>
-                    <td className="px-6 py-4 font-medium text-zinc-400">
-                      {inv.date}
-                    </td>
-                    <td className="px-6 py-4 text-zinc-300">
-                      {inv.tierName}
-                    </td>
-                    <td className="px-6 py-4 font-mono text-zinc-400">
-                      {inv.amount}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-[9px] font-bold uppercase">
-                        Paid Node
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => alert("Downloading PDF Invoice...")}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors font-medium text-[11px]"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Download Invoice PDF
-                      </button>
+                {recentBilledCalls.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-zinc-500 font-mono">
+                      No metered transactions recorded. All calls are currently within the 600 free minutes allocation.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  recentBilledCalls.map((call) => (
+                    <tr key={call.id} className="hover:bg-zinc-900/10 transition-colors">
+                      <td className="px-6 py-4 font-mono font-bold text-zinc-300">
+                        {call.id}
+                      </td>
+                      <td className="px-6 py-4 font-medium text-zinc-400">
+                        {call.date}
+                      </td>
+                      <td className="px-6 py-4 text-zinc-300">
+                        {call.fromPhone}
+                      </td>
+                      <td className="px-6 py-4 font-mono text-zinc-400">
+                        {call.duration}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-[9px] font-bold uppercase">
+                          Billed
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right font-mono font-bold text-emerald-400">
+                        {call.amount}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
