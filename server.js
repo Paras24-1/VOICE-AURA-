@@ -38,12 +38,31 @@ const activeCallContexts = new Map(); // Map to store call-specific lead context
 async function initiateVobizCall(contact, agentId) {
   const authId = process.env.VOBIZ_AUTH_ID;
   const authToken = process.env.VOBIZ_AUTH_TOKEN;
-  const callerId = process.env.VOBIZ_CALLER_ID;
   const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
   const answerUrl = `${host}/api/vobiz/outbound-answer?agentId=${agentId}${contact.id ? `&contactId=${contact.id}` : ''}`;
 
+  let callerId = process.env.VOBIZ_CALLER_ID;
+
+  // Fetch agent's custom telephone number from database to act as the dynamic callerId
+  if (supabase && agentId && agentId !== 'default' && agentId !== 'new') {
+    try {
+      const { data, error } = await supabase
+        .from('agents')
+        .select('telephone_number')
+        .eq('id', agentId)
+        .single();
+        
+      if (data && data.telephone_number) {
+        callerId = data.telephone_number;
+        console.log(`[Vobiz] Using agent-specific caller ID: ${callerId} for agent ${agentId}`);
+      }
+    } catch (dbErr) {
+      console.error('[Vobiz] Error fetching agent caller ID from Supabase:', dbErr);
+    }
+  }
+
   if (!authId || !authToken || !callerId) {
-    console.log(`[Vobiz] Missing credentials (VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN, or VOBIZ_CALLER_ID). Simulating call to ${contact.phone_number}`);
+    console.log(`[Vobiz] Missing credentials (VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN, or callerId). Simulating call to ${contact.phone_number}`);
     return { simulated: true };
   }
 
@@ -356,7 +375,7 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
 // Vobiz Transfer Callback webhook
 app.post('/api/vobiz/transfer-callback', async (req, res) => {
   const targetNumber = req.query.targetNumber || process.env.DEFAULT_HANDOVER_NUMBER || '+15555555555';
-  const callerId = process.env.VOBIZ_CALLER_ID || '';
+  const callerId = req.query.callerId || process.env.VOBIZ_CALLER_ID || '';
   console.log(`[Vobiz Transfer Webhook] Transferring call to: ${targetNumber}, callerId: ${callerId}`);
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
@@ -774,7 +793,10 @@ wss.on('connection', async (ws, request) => {
                 const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
                 const cleanHost = host.replace(/^https?:\/\//, '');
                 const protocol = request.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-                const redirectUrl = `${protocol}://${cleanHost}/api/vobiz/transfer-callback?targetNumber=${encodeURIComponent(targetNumber)}`;
+                let redirectUrl = `${protocol}://${cleanHost}/api/vobiz/transfer-callback?targetNumber=${encodeURIComponent(targetNumber)}`;
+                if (agentConfig && agentConfig.telephone_number) {
+                  redirectUrl += `&callerId=${encodeURIComponent(agentConfig.telephone_number)}`;
+                }
                 const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callSid}/`;
                 
                 console.log(`[Vobiz Transfer] Updating call ${callSid} with aleg_url=${redirectUrl}`);
