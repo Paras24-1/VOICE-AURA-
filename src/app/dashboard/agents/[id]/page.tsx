@@ -55,6 +55,30 @@ export default function AgentConfiguratorPage() {
   const supabase = createClient();
 
   const [agentData, setAgentData] = useState<VoiceAgentData | null>(null);
+  const [savingPhone, setSavingPhone] = useState(false);
+
+  const handleSavePhone = async () => {
+    if (!agentData) return;
+    setSavingPhone(true);
+    try {
+      const { error } = await supabase
+        .from('agents')
+        .update({ telephone_number: agentData.telephone_number })
+        .eq('id', agentData.id);
+
+      if (error) {
+        alert("Error saving phone number: " + error.message);
+      } else {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2000);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save phone number.");
+    } finally {
+      setSavingPhone(false);
+    }
+  };
 
   const fetchAgent = useCallback(async () => {
     setLoading(true);
@@ -382,6 +406,20 @@ export default function AgentConfiguratorPage() {
                 </select>
               </div>
 
+              {/* Telephone number */}
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block">
+                  Assigned Phone Node (Vobiz Caller ID)
+                </label>
+                <input
+                  type="text"
+                  placeholder="+918071583309"
+                  value={agentData.telephone_number || ""}
+                  onChange={(e) => setAgentData({ ...agentData, telephone_number: e.target.value })}
+                  className="w-full h-11 px-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-violet-500/50"
+                />
+              </div>
+
               {/* Description */}
               <div className="space-y-2">
                 <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block">
@@ -648,13 +686,26 @@ export default function AgentConfiguratorPage() {
               </p>
 
               {/* Assigned Number display */}
-              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-900 space-y-2">
-                <span className="text-[10px] font-mono text-zinc-500 uppercase block tracking-wider">
-                  Assigned Phone Node
-                </span>
-                <span className="text-sm font-bold text-white font-mono block">
-                  {agentData.telephone_number || "Not assigned"}
-                </span>
+              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-900 space-y-3">
+                <label className="text-[10px] font-mono text-zinc-500 uppercase block tracking-wider">
+                  Assigned Phone Node (Vobiz Caller ID)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    placeholder="+918071583309"
+                    value={agentData.telephone_number || ""}
+                    onChange={(e) => setAgentData({ ...agentData, telephone_number: e.target.value })}
+                    className="flex-1 h-10 px-3.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-300 focus:outline-none focus:border-violet-500"
+                  />
+                  <button
+                    onClick={handleSavePhone}
+                    disabled={savingPhone}
+                    className="px-3.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-bold text-xs transition-colors flex items-center justify-center"
+                  >
+                    {savingPhone ? "Saving..." : "Save"}
+                  </button>
+                </div>
                 {agentData.telephone_number && (
                   <span className="inline-flex items-center gap-1 text-[9px] font-mono text-emerald-400">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
