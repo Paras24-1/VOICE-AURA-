@@ -32,6 +32,7 @@ if (supabaseUrl && supabaseServiceKey) {
 
 // Active campaigns map to track running dialing loops
 const activeCampaigns = new Map();
+const activeCallContexts = new Map(); // Map to store call-specific lead context (e.g. from n8n)
 
 // Vobiz Outbound dialer integration
 async function initiateVobizCall(contact, agentId) {
@@ -337,11 +338,18 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
 
+  // Check if we have context stored for this callUuid to append it to the websocket URL
+  const contextData = activeCallContexts.get(callUuid);
+  let streamUrl = `${protocol}://${host}/vobiz-stream/${agentId}/${contactId || 'direct'}?callUuid=${callUuid}`;
+  if (contextData) {
+    streamUrl += `&context=${encodeURIComponent(JSON.stringify(contextData))}`;
+  }
+
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
-  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}/${contactId || 'direct'}?callUuid=${callUuid}</Stream>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${streamUrl}</Stream>
 </Response>`);
 });
 
@@ -469,7 +477,7 @@ app.post('/api/campaigns/pause', async (req, res) => {
 
 // Trigger direct call endpoint (useful for n8n flow integrations)
 app.post('/api/calls/trigger', async (req, res) => {
-  const { phone_number, name, agentId } = req.body;
+  const { phone_number, name, agentId, context } = req.body;
   if (!phone_number) {
     return res.status(400).json({ error: 'Missing phone_number in request body' });
   }
@@ -484,10 +492,18 @@ app.post('/api/calls/trigger', async (req, res) => {
     };
     
     const result = await initiateVobizCall(contact, targetAgentId);
+    
+    // Store custom lead context if provided
+    const callUuid = result.callSid || 'simulated';
+    if (context) {
+      activeCallContexts.set(callUuid, context);
+      console.log(`[Trigger Call API] Stored context for CallUUID ${callUuid}:`, JSON.stringify(context));
+    }
+
     return res.json({
       success: true,
       message: result.simulated ? 'Simulated call triggered successfully' : 'Real outbound call initiated successfully',
-      callSid: result.callSid || 'simulated',
+      callSid: callUuid,
       simulated: result.simulated
     });
   } catch (err) {
@@ -531,6 +547,20 @@ wss.on('connection', async (ws, request) => {
   }
   
   console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}, CallSid=${callSid}`);
+
+  // Extract custom lead context if passed via query parameter or in-memory map
+  let contextParam = url.searchParams.get('context');
+  let leadContext = null;
+  if (contextParam) {
+    try {
+      leadContext = JSON.parse(decodeURIComponent(contextParam));
+    } catch (e) {
+      console.error('[WebSocket] Error parsing context query param:', e);
+    }
+  }
+  if (!leadContext && callSid) {
+    leadContext = activeCallContexts.get(callSid);
+  }
 
   // Fetch callSid from database as fallback for outbound campaign calls if not in query params
   if (!callSid && contactId && contactId !== 'direct' && supabase) {
@@ -669,8 +699,24 @@ wss.on('connection', async (ws, request) => {
         systemInstruction: {
           parts: [
             {
-              text: (agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Vox, an ultra-low latency voice agent.') +
-                    '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.'
+              text: (() => {
+                let systemPromptText = agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Vox, an ultra-low latency voice agent.';
+                if (leadContext) {
+                  console.log(`[Gemini] Appending lead context to system prompt:`, JSON.stringify(leadContext));
+                  let contextStr = '\n\n--------------------------------------------------\n';
+                  contextStr += '[ACTIVE CALL LEAD CONTEXT - FOR YOUR REFERENCE ONLY]\n';
+                  for (const [key, value] of Object.entries(leadContext)) {
+                    const formattedKey = key
+                      .split('_')
+                      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                      .join(' ');
+                    contextStr += `${formattedKey}: ${value}\n`;
+                  }
+                  contextStr += '--------------------------------------------------\n';
+                  systemPromptText += contextStr;
+                }
+                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.';
+              })()
             }
           ]
         },
