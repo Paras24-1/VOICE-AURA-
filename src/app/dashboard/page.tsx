@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
-  TrendingUp, Clock, Activity, Search, Volume2,
-  CheckCircle2, AlertTriangle, XCircle, FileText, Layers, RefreshCw, Loader2
+  TrendingUp, Clock, Activity, Search,
+  CheckCircle2, AlertTriangle, XCircle, RefreshCw, Loader2
 } from "lucide-react";
 
 interface CallLog {
@@ -32,7 +32,6 @@ interface Stats {
 export default function DashboardPage() {
   const [timeRange, setTimeRange] = useState("7d");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [stats, setStats] = useState<Stats>({ totalCalls: 0, totalMinutes: 0, minutesLimit: 1000, avgDuration: 0, totalCost: 0 });
   const [loading, setLoading] = useState(true);
@@ -186,7 +185,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Active Calls */}
         <div className="glass-panel rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between h-44 border border-zinc-800">
           <div className="flex items-center justify-between">
@@ -266,183 +265,80 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Total Agents */}
-        <div className="glass-panel rounded-2xl p-6 flex flex-col justify-between h-44 border border-zinc-800">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Live DB Records</span>
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div>
-            <div className="text-4xl font-heading font-extrabold text-white text-glow">
-              {loading ? "—" : filtered.length}
-            </div>
-            <p className="text-xs text-emerald-400 flex items-center gap-1 font-mono mt-2">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Real call logs from Supabase
-            </p>
-          </div>
-        </div>
       </div>
 
-      {/* Call Logs Table + Inspector */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h2 className="font-heading text-xl font-bold text-white tracking-tight">Call Logs</h2>
-              <p className="text-xs text-zinc-500">Live call history from your database.</p>
-            </div>
-          </div>
-
-          <div className="relative">
-            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-zinc-500">
-              <Search className="w-4 h-4" />
-            </div>
-            <input
-              type="text"
-              placeholder="Search by agent name, ID, phone number, or transcript..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full h-10 pl-10 pr-4 rounded-xl bg-zinc-950/80 border border-zinc-800 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-violet-500/50"
-            />
-          </div>
-
-          <div className="glass-panel rounded-2xl overflow-hidden border border-zinc-800">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left">
-                <thead>
-                  <tr className="bg-zinc-950/80 border-b border-zinc-900 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
-                    <th className="px-6 py-4">Agent / Caller</th>
-                    <th className="px-6 py-4">Duration</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4">Time</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-900/60 text-xs">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center">
-                        <Loader2 className="w-6 h-6 animate-spin text-violet-500 mx-auto mb-2" />
-                        <p className="text-zinc-500 font-mono text-xs">Loading call logs from database...</p>
-                      </td>
-                    </tr>
-                  ) : filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-zinc-500 font-mono">
-                        <Activity className="w-8 h-8 mx-auto mb-3 text-zinc-700" />
-                        <p>No call logs found.</p>
-                        <p className="text-[10px] mt-1 text-zinc-600">Calls will appear here once your voice agent is deployed and receives calls.</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    filtered.map((log) => (
-                      <tr key={log.id} className="hover:bg-zinc-900/20 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600/20 to-indigo-600/20 border border-violet-500/20 flex items-center justify-center font-bold text-[10px] text-violet-300">
-                              {(log.agents?.name || log.from_phone_number || "??").substring(0, 2).toUpperCase()}
-                            </div>
-                            <div>
-                              <span className="font-semibold text-zinc-200 block">{log.agents?.name || "Unknown Agent"}</span>
-                              <span className="text-[10px] text-zinc-500 font-mono">{log.from_phone_number || log.id.substring(0, 8)}</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 font-mono text-zinc-400">{formatDuration(log.duration_seconds)}</td>
-                        <td className="px-6 py-4">{statusBadge(log.status)}</td>
-                        <td className="px-6 py-4 text-zinc-500 font-mono text-[10px]">{formatTime(log.created_at)}</td>
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => setSelectedCall(log)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors font-medium text-[11px]"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            Details
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+      {/* Call Logs Table */}
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="font-heading text-xl font-bold text-white tracking-tight">Call Logs</h2>
+            <p className="text-xs text-zinc-500">Live call history from your database.</p>
           </div>
         </div>
 
-        {/* Inspector Panel */}
-        <div className="space-y-6">
-          <h2 className="font-heading text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Layers className="w-5 h-5 text-violet-400" />
-            Call Inspector
-          </h2>
+        <div className="relative">
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-zinc-500">
+            <Search className="w-4 h-4" />
+          </div>
+          <input
+            type="text"
+            placeholder="Search by agent name, ID, phone number, or transcript..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full h-10 pl-10 pr-4 rounded-xl bg-zinc-950/80 border border-zinc-800 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-violet-500/50"
+          />
+        </div>
 
-          {selectedCall ? (
-            <div className="glass-panel rounded-2xl p-6 border border-violet-500/20 bg-gradient-to-b from-zinc-950 to-violet-950/10 space-y-6 animate-in slide-in-from-right-4 duration-300">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-violet-600/20 to-indigo-600/20 border border-violet-500/20 flex items-center justify-center font-bold text-lg text-violet-300">
-                  {(selectedCall.agents?.name || "??").substring(0, 2).toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="font-bold text-zinc-200 text-sm">{selectedCall.agents?.name || "Unknown Agent"}</h3>
-                  <p className="text-[11px] font-mono text-zinc-500 mt-0.5">ID: {selectedCall.id.substring(0, 16)}...</p>
-                  <span className="inline-block mt-2 px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-[10px] font-mono text-zinc-400">
-                    {selectedCall.status}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 p-3.5 rounded-xl bg-zinc-950 border border-zinc-900">
-                <div>
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase block">Duration</span>
-                  <span className="text-xs font-semibold text-zinc-300 block mt-0.5">{formatDuration(selectedCall.duration_seconds)}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase block">Cost</span>
-                  <span className="text-xs font-semibold text-emerald-400 font-mono block mt-0.5">₹{(selectedCall.cost || 0).toFixed(2)}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase block">From</span>
-                  <span className="text-xs font-semibold text-zinc-300 block mt-0.5">{selectedCall.from_phone_number || "N/A"}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase block">Time</span>
-                  <span className="text-xs font-semibold text-zinc-300 block mt-0.5">{formatTime(selectedCall.created_at)}</span>
-                </div>
-              </div>
-
-              {selectedCall.transcript && (
-                <div className="space-y-2">
-                  <span className="text-[11px] font-mono text-zinc-500 uppercase flex items-center gap-1.5">
-                    <Volume2 className="w-3.5 h-3.5 text-violet-400" />
-                    Transcript
-                  </span>
-                  <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-900 text-xs text-zinc-300 italic leading-relaxed max-h-40 overflow-y-auto">
-                    &ldquo;{selectedCall.transcript}&rdquo;
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={() => setSelectedCall(null)}
-                className="w-full text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-800 rounded-lg py-2 hover:bg-zinc-900 transition-colors"
-              >
-                Close Inspector
-              </button>
-            </div>
-          ) : (
-            <div className="glass-panel rounded-2xl p-8 border border-zinc-800/80 text-center py-16 space-y-4">
-              <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto">
-                <Activity className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-zinc-300 text-sm">No Call Selected</h3>
-                <p className="text-xs text-zinc-500 mt-1 max-w-[200px] mx-auto">
-                  Click &ldquo;Details&rdquo; on any call log to inspect transcripts and metadata.
-                </p>
-              </div>
-            </div>
-          )}
+        <div className="glass-panel rounded-2xl overflow-hidden border border-zinc-800">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="bg-zinc-950/80 border-b border-zinc-900 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
+                  <th className="px-6 py-4">Agent / Caller</th>
+                  <th className="px-6 py-4">Duration</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4 text-right">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-900/60 text-xs">
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center">
+                      <Loader2 className="w-6 h-6 animate-spin text-violet-500 mx-auto mb-2" />
+                      <p className="text-zinc-500 font-mono text-xs">Loading call logs from database...</p>
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center text-zinc-500 font-mono">
+                      <Activity className="w-8 h-8 mx-auto mb-3 text-zinc-700" />
+                      <p>No call logs found.</p>
+                      <p className="text-[10px] mt-1 text-zinc-600">Calls will appear here once your voice agent is deployed and receives calls.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((log) => (
+                    <tr key={log.id} className="hover:bg-zinc-900/20 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600/20 to-indigo-600/20 border border-violet-500/20 flex items-center justify-center font-bold text-[10px] text-violet-300">
+                            {(log.agents?.name || log.from_phone_number || "??").substring(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-zinc-200 block">{log.agents?.name || "Unknown Agent"}</span>
+                            <span className="text-[10px] text-zinc-500 font-mono">{log.from_phone_number || log.id.substring(0, 8)}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-zinc-400">{formatDuration(log.duration_seconds)}</td>
+                      <td className="px-6 py-4">{statusBadge(log.status)}</td>
+                      <td className="px-6 py-4 text-zinc-500 font-mono text-[10px] text-right">{formatTime(log.created_at)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

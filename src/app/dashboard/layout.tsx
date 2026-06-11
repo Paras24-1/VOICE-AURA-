@@ -219,16 +219,7 @@ export default function DashboardLayout({
 
         {/* User Workspace Info & Profile */}
         <div className="p-4 border-t border-zinc-900/80 bg-zinc-950/40">
-          {/* Quick Node Status */}
-          <div className="flex items-center justify-between p-2.5 mb-4 rounded-lg bg-zinc-900/30 border border-zinc-800/40">
-            <div className="flex items-center gap-2">
-              <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <span className="text-[11px] font-mono text-zinc-400">WebRTC Gateway</span>
-            </div>
-            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono">
-              99.98%
-            </span>
-          </div>
+
 
           <div className="relative">
             <button
@@ -332,11 +323,7 @@ export default function DashboardLayout({
 
           {/* Top Actions Profile */}
           <div className="flex items-center gap-4">
-            {/* System Pulse */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/5 border border-emerald-500/10 text-emerald-400 text-[11px] font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Node: US-EAST-1 Active
-            </div>
+
 
             {/* Notification Hub */}
             <button className="relative p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-zinc-400 hover:text-zinc-200 transition-colors">
