@@ -165,7 +165,7 @@ export default function DashboardLayout({
               </div>
               <div>
                 <h1 className="font-heading font-bold text-lg tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
-                  AuraVoice<span className="text-violet-500">.AI</span>
+                  VoxAura<span className="text-violet-500">.AI</span>
                 </h1>
                 <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">
                   Enterprise Node
@@ -326,7 +326,7 @@ export default function DashboardLayout({
               <Mic className="w-4 h-4" />
             </div>
             <span className="font-heading font-bold text-sm tracking-tight text-white">
-              AuraVoice
+              VoxAura
             </span>
           </div>
 

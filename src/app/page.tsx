@@ -18,7 +18,7 @@ export default function Home() {
           </div>
           <div>
             <h1 className="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
-              AuraVoice<span className="text-violet-500">.AI</span>
+              VoxAura<span className="text-violet-500">.AI</span>
             </h1>
             <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">
               Global Stream Gateway
@@ -129,7 +129,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="max-w-7xl mx-auto w-full px-8 py-8 border-t border-zinc-900/50 flex flex-col sm:flex-row items-center justify-between text-zinc-500 text-xs gap-4">
-        <p>&copy; 2026 AuraVoice.AI Node Corporation. All rights reserved.</p>
+        <p>&copy; 2026 VoxAura.AI Node Corporation. All rights reserved.</p>
         <div className="flex gap-4">
           <a href="#" className="hover:text-zinc-300 transition-colors">Privacy Policy</a>
           <a href="#" className="hover:text-zinc-300 transition-colors">SLA Agreement</a>

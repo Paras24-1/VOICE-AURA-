@@ -258,7 +258,7 @@ export default function WebRTCCallModal({ agentId, agentName, contactId, onClose
       setCallState("error");
       setStatusText("Connection failed");
       setErrorMessage(
-        "Could not connect to the AuraVoice server. Make sure the voice server is running: npm run server"
+        "Could not connect to the VoxAura server. Make sure the voice server is running: npm run server"
       );
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -471,7 +471,7 @@ export default function WebRTCCallModal({ agentId, agentName, contactId, onClose
           <p className="text-[10px] text-zinc-600 text-center px-4">
             {isConnected
               ? "Speak naturally. Gemini AI is listening and will respond in real-time."
-              : "Connects to the AuraVoice voice server (port 5050) via WebSocket."}
+              : "Connects to the VoxAura voice server (port 5050) via WebSocket."}
           </p>
         </div>
       </div>

@@ -137,9 +137,9 @@ export default function AgentConfiguratorPage() {
 
   const handleCopyScript = () => {
     if (!agentData) return;
-    const scriptSnippet = `<!-- AuraVoice AI Agent Embed -->
+    const scriptSnippet = `<!-- VoxAura AI Agent Embed -->
 <script
-  src="https://cdn.auravoice.ai/widget/v1/embed.js"
+  src="https://cdn.voxaura.ai/widget/v1/embed.js"
   data-agent-id="${agentData.id}"
   data-theme="dark"
   data-latency-mode="webrtc-optimal"
@@ -153,7 +153,7 @@ export default function AgentConfiguratorPage() {
   const handleCopyIframe = () => {
     if (!agentData) return;
     const iframeSnippet = `<iframe
-  src="https://widget.auravoice.ai/agent/${agentData.id}?theme=dark"
+  src="https://widget.voxaura.ai/agent/${agentData.id}?theme=dark"
   width="380px"
   height="600px"
   style="border: none; border-radius: 16px; background: transparent;"
@@ -582,9 +582,9 @@ export default function AgentConfiguratorPage() {
 
               {/* Code display block */}
               <pre className="p-4 rounded-xl bg-zinc-950 border border-zinc-900 text-xs text-violet-300 font-mono overflow-x-auto leading-relaxed">
-                {`<!-- AuraVoice AI Agent Embed -->
+                {`<!-- VoxAura AI Agent Embed -->
 <script
-  src="https://cdn.auravoice.ai/widget/v1/embed.js"
+  src="https://cdn.voxaura.ai/widget/v1/embed.js"
   data-agent-id="${agentData.id}"
   data-theme="dark"
   data-latency-mode="webrtc-optimal"
@@ -625,7 +625,7 @@ export default function AgentConfiguratorPage() {
 
               <pre className="p-4 rounded-xl bg-zinc-950 border border-zinc-900 text-xs text-violet-300 font-mono overflow-x-auto leading-relaxed">
                 {`<iframe
-  src="https://widget.auravoice.ai/agent/${agentData.id}?theme=dark"
+  src="https://widget.voxaura.ai/agent/${agentData.id}?theme=dark"
   width="380px"
   height="600px"
   style="border: none; border-radius: 16px; background: transparent;"

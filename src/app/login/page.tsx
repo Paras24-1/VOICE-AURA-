@@ -87,7 +87,7 @@ function LoginContent() {
             <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#030303] animate-pulse" />
           </div>
           <h1 className="font-heading font-extrabold text-xl tracking-tight text-white">
-            AuraVoice<span className="text-violet-500">.AI</span>
+            VoxAura<span className="text-violet-500">.AI</span>
           </h1>
         </Link>
         <p className="text-xs text-zinc-400">
@@ -216,7 +216,7 @@ function LoginContent() {
             </>
           ) : (
             <>
-              New to AuraVoice? <span className="text-violet-400 font-bold">Create an account</span>
+              New to VoxAura? <span className="text-violet-400 font-bold">Create an account</span>
             </>
           )}
         </button>

@@ -13,7 +13,7 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "AuraVoice AI | Multilingual Voice Agent SaaS",
+  title: "VoxAura AI | Multilingual Voice Agent SaaS",
   description: "Enterprise-grade multilingual AI voice agent platform with real-time analytics and custom integration.",
 };
 

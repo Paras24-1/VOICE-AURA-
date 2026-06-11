@@ -1092,7 +1092,7 @@ wss.on('connection', async (ws, request) => {
 // Run server
 server.listen(PORT, () => {
   console.log(`===========================================================`);
-  console.log(` AuraVoice.AI Voice Gateway Server running on port ${PORT}`);
+  console.log(` VoxAura.AI Voice Gateway Server running on port ${PORT}`);
   console.log(` WebRTC Stream Path: ws://localhost:${PORT}/webRTC-stream`);
   console.log(` Twilio Stream Path: ws://localhost:${PORT}/media-stream`);
   console.log(`===========================================================`);
