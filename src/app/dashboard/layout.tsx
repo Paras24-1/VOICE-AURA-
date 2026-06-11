@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   LayoutDashboard,
   Mic,
@@ -35,10 +36,60 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [notifications, setNotifications] = useState(3);
+  const [userProfile, setUserProfile] = useState<{ email: string; fullName: string; initials: string } | null>(null);
+
+  // Fetch authenticated user profile details dynamically
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const email = user.email || "";
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", user.id)
+            .single();
+
+          const fullName = profile?.full_name || email.split("@")[0] || "User";
+          const initials = fullName
+            .split(" ")
+            .map((n: string) => n[0])
+            .join("")
+            .toUpperCase()
+            .substring(0, 2) || "U";
+
+          setUserProfile({ email, fullName, initials });
+        } else {
+          router.push("/login");
+        }
+      } catch (err) {
+        console.error("Failed to load user profile:", err);
+      }
+    };
+    fetchUser();
+  }, [supabase, router]);
+
+  const handleSignOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Sign out error:", error.message);
+        alert("Sign out failed: " + error.message);
+      } else {
+        router.push("/login");
+      }
+    } catch (err) {
+      console.error("Sign out crash:", err);
+    }
+  };
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -190,13 +241,17 @@ export default function DashboardLayout({
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md">
-                    AM
+                    {userProfile?.initials || "U"}
                   </div>
                   <span className="absolute bottom-[-2px] right-[-2px] w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-zinc-950" />
                 </div>
-                <div>
-                  <div className="font-semibold text-xs text-zinc-200">Alex Mercer</div>
-                  <div className="text-[10px] text-zinc-500 font-medium">Enterprise Admin</div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-xs text-zinc-200 truncate">
+                    {userProfile?.fullName || "Loading..."}
+                  </div>
+                  <div className="text-[10px] text-zinc-500 font-medium truncate">
+                    {userProfile?.email || "User Node"}
+                  </div>
                 </div>
               </div>
               <ChevronDown className="w-4 h-4 text-zinc-500" />
@@ -211,7 +266,7 @@ export default function DashboardLayout({
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5 text-violet-400 text-xs font-semibold">
                     <Sparkles className="w-3.5 h-3.5" />
-                    Pro Premium Plan
+                    Free & Pay-As-You-Go
                   </div>
                 </div>
                 <button
@@ -230,7 +285,7 @@ export default function DashboardLayout({
                 </button>
                 <div className="h-px bg-zinc-900/60 my-1" />
                 <button
-                  onClick={() => alert("Signing out of node...")}
+                  onClick={handleSignOut}
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/20 rounded-lg transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
