@@ -459,7 +459,81 @@ app.post('/api/vobiz/whisper', async (req, res) => {
 app.post('/api/vobiz/events', async (req, res) => {
   const { contactId } = req.query;
   const { event, status } = req.body;
-  console.log(`[Vobiz Event] Call event: contactId=${contactId}, event=${event}, status=${status}`);
+  console.log(`[Vobiz Event] Call event: contactId=${contactId}, event=${event}, status=${status}, body:`, JSON.stringify(req.body));
+
+  const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || '';
+  const finalDuration = Number(req.body.Duration || req.body.duration || req.body.Billsec || req.body.billsec || req.body.BillDuration || req.body.bill_duration || 0);
+
+  // If a call is completed/hung up and we have a valid duration, update the call log with the final duration from Vobiz
+  if (supabase && callUuid && finalDuration > 0) {
+    try {
+      console.log(`[Vobiz Event] Processing Hangup for CallUUID ${callUuid}. Vobiz Duration: ${finalDuration}s`);
+      
+      // Fetch the call log matching call_sid
+      const { data: callLog, error: fetchErr } = await supabase
+        .from('call_logs')
+        .select('*')
+        .eq('call_sid', callUuid)
+        .maybeSingle();
+
+      if (fetchErr) {
+        console.error(`[Vobiz Event] Error fetching call log for UUID ${callUuid}:`, fetchErr.message);
+      } else if (callLog) {
+        // Add 5 seconds padding as requested by the user
+        const paddedDuration = finalDuration + 5;
+        
+        // Fetch previous call logs to recalculate the cost accurately
+        let prevTotalSeconds = 0;
+        const { data: previousCalls, error: prevErr } = await supabase
+          .from('call_logs')
+          .select('duration_seconds')
+          .eq('organization_id', callLog.organization_id)
+          .neq('id', callLog.id); // exclude the current call log
+          
+        if (!prevErr && previousCalls) {
+          prevTotalSeconds = previousCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+        }
+
+        const FREE_SECONDS_LIMIT = 600 * 60; // 600 minutes
+        const RATE_PER_MINUTE = 3.5; // ₹3.5/min
+        const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
+        
+        let calculatedCost = 0;
+        const newTotalSeconds = prevTotalSeconds + paddedDuration;
+        
+        if (prevTotalSeconds >= FREE_SECONDS_LIMIT) {
+          calculatedCost = paddedDuration * RATE_PER_SECOND;
+        } else if (newTotalSeconds > FREE_SECONDS_LIMIT) {
+          const billableSeconds = newTotalSeconds - FREE_SECONDS_LIMIT;
+          calculatedCost = billableSeconds * RATE_PER_SECOND;
+        } else {
+          calculatedCost = 0;
+        }
+        
+        const finalCost = Number(calculatedCost.toFixed(4));
+
+        console.log(`[Vobiz Event] Updating call log ${callLog.id}: New Duration: ${paddedDuration}s (Padded), New Cost: ₹ ${finalCost}`);
+
+        const { error: updateErr } = await supabase
+          .from('call_logs')
+          .update({
+            duration_seconds: paddedDuration,
+            cost: finalCost
+          })
+          .eq('id', callLog.id);
+
+        if (updateErr) {
+          console.error(`[Vobiz Event] Error updating call log ${callLog.id}:`, updateErr.message);
+        } else {
+          console.log(`[Vobiz Event] Call log ${callLog.id} updated successfully.`);
+        }
+      } else {
+        console.log(`[Vobiz Event] No call log found in DB with call_sid=${callUuid}.`);
+      }
+    } catch (err) {
+      console.error('[Vobiz Event] Exception in completed call processing:', err);
+    }
+  }
 
   if (supabase && contactId && contactId !== 'direct') {
     try {
@@ -1107,7 +1181,7 @@ wss.on('connection', async (ws, request) => {
       geminiWs.close();
     }
     
-    const callDuration = Math.round((Date.now() - callStartTime) / 1000);
+    const callDuration = Math.round((Date.now() - callStartTime) / 1000) + 5;
     
     // Auto-save call logs and transcripts in Supabase
     if (supabase && agentId && agentId !== 'default' && agentId !== 'new') {
@@ -1163,7 +1237,8 @@ wss.on('connection', async (ws, request) => {
             duration_seconds: callDuration,
             status: 'completed',
             transcript: transcriptString,
-            cost: finalCost
+            cost: finalCost,
+            call_sid: callSid || null
           });
           
         if (error) {
