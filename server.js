@@ -34,6 +34,59 @@ if (supabaseUrl && supabaseServiceKey) {
 const activeCampaigns = new Map();
 const activeCallContexts = new Map(); // Map to store call-specific lead context (e.g. from n8n)
 
+// Helper to process system prompt templates for inbound vs outbound calls
+function processSystemPrompt(systemPromptText, leadContext) {
+  if (leadContext && Object.keys(leadContext).length > 0) {
+    let processedPrompt = systemPromptText;
+    for (const [key, value] of Object.entries(leadContext)) {
+      const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi');
+      processedPrompt = processedPrompt.replace(regex, value || '');
+    }
+    processedPrompt = processedPrompt.replace(/\{\{\s*lead_name\s*\}\}/gi, 'सर/मैम');
+    processedPrompt = processedPrompt.replace(/\{\{\s*assigned_employee_name\s*\}\}/gi, 'हमारे सेल्स प्रतिनिधि');
+    processedPrompt = processedPrompt.replace(/\{\{\s*machine_interest\s*\}\}/gi, 'मशीन');
+    processedPrompt = processedPrompt.replace(/\{\{\s*budget\s*\}\}/gi, 'बजट');
+    processedPrompt = processedPrompt.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, '');
+    return processedPrompt;
+  } else {
+    let processedPrompt = systemPromptText;
+    
+    // Inbound call - replace language-specific parts with grammatically correct fallbacks
+    processedPrompt = processedPrompt.replace(
+      /मी तुमची call आत्ता \{\{\s*assigned_employee_name\s*\}\} कडे transfer करू का\?/g,
+      "मी तुमची call आत्ता आमच्या सेल्स एक्सपर्ट कडे transfer करू का?"
+    );
+    processedPrompt = processedPrompt.replace(
+      /transfer your call to \{\{\s*assigned_employee_name\s*\}\} from our sales team/gi,
+      "transfer your call to a sales representative from our team"
+    );
+    
+    const openingRegex = /CALL OPENING[\s\S]*?CONVERSATION FLOW:/i;
+    if (openingRegex.test(processedPrompt)) {
+      const inboundOpening = `CALL OPENING (use this EXACTLY on call connect):
+
+Hindi:
+"नमस्ते! Shree Mahalaxmi Enterprises, Pune में आपका स्वागत है। मैं आपकी क्या सहायता कर सकता/सकती हूँ?"
+
+Marathi:
+"नमस्ते! श्री महालक्ष्मी एंटरप्राइजेस, पुणे मध्ये आपले स्वागत आहे. मी आपली काय मदत करू शकतो/शकते?"
+
+English:
+"Hello! Welcome to Shree Mahalaxmi Enterprises, Pune. How can I help you today?"
+
+
+CONVERSATION FLOW:`;
+      processedPrompt = processedPrompt.replace(openingRegex, inboundOpening);
+    }
+    processedPrompt = processedPrompt.replace(/\{\{\s*lead_name\s*\}\}/gi, 'सर/मैम');
+    processedPrompt = processedPrompt.replace(/\{\{\s*assigned_employee_name\s*\}\}/gi, 'हमारे सेल्स प्रतिनिधि');
+    processedPrompt = processedPrompt.replace(/\{\{\s*machine_interest\s*\}\}/gi, 'मशीन');
+    processedPrompt = processedPrompt.replace(/\{\{\s*budget\s*\}\}/gi, 'बजट');
+    processedPrompt = processedPrompt.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, '');
+    return processedPrompt;
+  }
+}
+
 // Vobiz Outbound dialer integration
 async function initiateVobizCall(contact, agentId) {
   const authId = process.env.VOBIZ_AUTH_ID;
@@ -650,19 +703,23 @@ wss.on('connection', async (ws, request) => {
     if (isGreetingSent) return;
     if (isSetupComplete && streamSid) {
       isGreetingSent = true;
+      const greetingText = (leadContext && Object.keys(leadContext).length > 0)
+        ? "Hello! Please initiate the outbound call by greeting the lead exactly as instructed in the CALL OPENING section."
+        : "Hello! A customer has called in. Please greet them warmly using the CALL OPENING instruction for inbound calls.";
+      
       const greetMessage = {
         clientContent: {
           turns: [
             {
               role: "user",
-              parts: [{ text: "Hello! Please introduce yourself briefly and ask how you can help me today." }]
+              parts: [{ text: greetingText }]
             }
           ],
           turnComplete: true
         }
       };
       geminiWs.send(JSON.stringify(greetMessage));
-      console.log(`[Gemini] Sent initial greeting trigger for stream: ${streamSid}`);
+      console.log(`[Gemini] Sent initial greeting trigger for stream: ${streamSid} (Inbound: ${!leadContext})`);
     }
   };
 
@@ -720,6 +777,8 @@ wss.on('connection', async (ws, request) => {
             {
               text: (() => {
                 let systemPromptText = agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Vox, an ultra-low latency voice agent.';
+                systemPromptText = processSystemPrompt(systemPromptText, leadContext);
+                
                 if (leadContext) {
                   console.log(`[Gemini] Appending lead context to system prompt:`, JSON.stringify(leadContext));
                   let contextStr = '\n\n--------------------------------------------------\n';
