@@ -820,7 +820,7 @@ wss.on('connection', async (ws, request) => {
         for (const fc of response.toolCall.functionCalls) {
           if (fc.name === 'transferCall') {
             let targetNumber = fc.args.targetNumber;
-            const defaultNum = process.env.DEFAULT_HANDOVER_NUMBER || '+15555555555';
+            const defaultNum = agentConfig.transfer_number || process.env.DEFAULT_HANDOVER_NUMBER || '+15555555555';
             
             // Fallback to default number if targetNumber is missing, or is a known placeholder
             if (!targetNumber || 

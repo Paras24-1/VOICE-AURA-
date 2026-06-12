@@ -56,6 +56,11 @@ BEGIN
         ALTER TABLE public.agents ADD COLUMN avg_latency integer DEFAULT 0;
     END IF;
 
+    -- transfer_number: destination number for call transfers / human handover
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='agents' AND column_name='transfer_number') THEN
+        ALTER TABLE public.agents ADD COLUMN transfer_number text DEFAULT '';
+    END IF;
+
     -- Make voice_id nullable since we now use voice_profile instead
     ALTER TABLE public.agents ALTER COLUMN voice_id DROP NOT NULL;
     ALTER TABLE public.agents ALTER COLUMN voice_id SET DEFAULT '';

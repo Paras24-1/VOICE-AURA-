@@ -36,6 +36,7 @@ interface VoiceAgentData {
   speech_threshold: number;
   silence_detection: number;
   telephone_number: string;
+  transfer_number?: string;
   avatar_url?: string;
   description?: string;
 }
@@ -93,7 +94,7 @@ export default function AgentConfiguratorPage() {
       if (!membership) return;
       const { data: agent, error } = await supabase
         .from('agents')
-        .select('id, name, language, lang_code, voice_profile, active, system_prompt, temperature, speech_threshold, silence_detection, telephone_number, avatar_url, description')
+        .select('id, name, language, lang_code, voice_profile, active, system_prompt, temperature, speech_threshold, silence_detection, telephone_number, transfer_number, avatar_url, description')
         .eq('id', id)
         .eq('organization_id', membership.organization_id)
         .single();
@@ -131,6 +132,7 @@ export default function AgentConfiguratorPage() {
           speech_threshold: -42,
           silence_detection: 600,
           telephone_number: "",
+          transfer_number: "",
           avatar_url: undefined,
           description: undefined,
         });
@@ -235,6 +237,7 @@ export default function AgentConfiguratorPage() {
         speech_threshold: agentData.speech_threshold,
         silence_detection: agentData.silence_detection,
         telephone_number: agentData.telephone_number,
+        transfer_number: agentData.transfer_number || "",
         avatar_url: agentData.avatar_url || null,
         description: agentData.description || null,
       };
@@ -416,6 +419,20 @@ export default function AgentConfiguratorPage() {
                   placeholder="+918071583309"
                   value={agentData.telephone_number || ""}
                   onChange={(e) => setAgentData({ ...agentData, telephone_number: e.target.value })}
+                  className="w-full h-11 px-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-violet-500/50"
+                />
+              </div>
+
+              {/* Handover / Transfer Phone Number */}
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block">
+                  Handover / Support Transfer Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="+919876543210"
+                  value={agentData.transfer_number || ""}
+                  onChange={(e) => setAgentData({ ...agentData, transfer_number: e.target.value })}
                   className="w-full h-11 px-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-violet-500/50"
                 />
               </div>
