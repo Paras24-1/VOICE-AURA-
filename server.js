@@ -150,7 +150,9 @@ async function initiateVobizCall(contact, agentId) {
       from: cleanedFrom,
       to: cleanedTo,
       answer_url: answerUrl,
-      answer_method: 'POST'
+      answer_method: 'POST',
+      hangup_url: `${host}/api/vobiz/events?contactId=${contact.id || 'direct'}`,
+      hangup_method: 'POST'
     })
   });
 
@@ -474,8 +476,8 @@ app.all('/api/vobiz/events', async (req, res) => {
 
   const isDialEnded = (req.query.action === 'dial-ended');
 
-  // If a call is completed/hung up and we have a valid duration (either total or dialed human duration), update the call log
-  if (supabase && callUuid && (finalDuration > 0 || dialDuration > 0)) {
+  // If a call event is received, find and update/log the call log
+  if (supabase && callUuid) {
     try {
       console.log(`[Vobiz Event] Processing event for CallUUID ${callUuid}. Vobiz Total Duration: ${finalDuration}s, Dial (Human) Duration: ${dialDuration}s, isDialEnded: ${isDialEnded}`);
       
@@ -945,10 +947,9 @@ wss.on('connection', async (ws, request) => {
                   throw new Error('Valid Call UUID not available for transfer');
                 }
                 
-                const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
-                const cleanHost = host.replace(/^https?:\/\//, '');
                 const protocol = request.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-                let redirectUrl = `${protocol}://${cleanHost}/api/vobiz/transfer-callback?targetNumber=${encodeURIComponent(targetNumber)}`;
+                const reqHost = request.headers.host;
+                let redirectUrl = `${protocol}://${reqHost}/api/vobiz/transfer-callback?targetNumber=${encodeURIComponent(targetNumber)}`;
                 if (agentConfig && agentConfig.telephone_number) {
                   redirectUrl += `&callerId=${encodeURIComponent(agentConfig.telephone_number)}`;
                 }
@@ -966,7 +967,9 @@ wss.on('connection', async (ws, request) => {
                   body: JSON.stringify({
                     legs: 'aleg',
                     aleg_url: redirectUrl,
-                    aleg_method: 'POST'
+                    aleg_method: 'POST',
+                    hangup_url: `${protocol}://${reqHost}/api/vobiz/events`,
+                    hangup_method: 'POST'
                   })
                 });
                 
