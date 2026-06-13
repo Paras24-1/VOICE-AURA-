@@ -458,20 +458,26 @@ app.post('/api/vobiz/whisper', async (req, res) => {
 });
 
 
-// Vobiz Events webhook
-app.post('/api/vobiz/events', async (req, res) => {
+// Vobiz Events webhook (supports both GET and POST)
+app.all('/api/vobiz/events', async (req, res) => {
   const { contactId } = req.query;
-  const { event, status } = req.body;
-  console.log(`[Vobiz Event] Call event: contactId=${contactId}, event=${event}, status=${status}, body:`, JSON.stringify(req.body));
+  const method = req.method;
+  const params = method === 'GET' ? req.query : req.body;
+  const event = params.event;
+  const status = params.status;
+  
+  console.log(`[Vobiz Event] Call event (${method}): contactId=${contactId}, event=${event}, status=${status}, query:`, JSON.stringify(req.query), `body:`, JSON.stringify(req.body));
 
-  const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.CallUUID || req.query.call_uuid || req.query.CallSid || req.query.call_sid || '';
-  const finalDuration = Number(req.body.Duration || req.body.duration || req.body.Billsec || req.body.billsec || req.body.BillDuration || req.body.bill_duration || 0);
-  const dialDuration = Number(req.body.DialCallDuration || req.body.dial_call_duration || 0);
+  const callUuid = params.CallUUID || params.call_uuid || params.CallSid || params.call_sid || req.query.CallUUID || req.query.call_uuid || req.query.CallSid || req.query.call_sid || '';
+  const finalDuration = Number(params.Duration || params.duration || params.Billsec || params.billsec || params.BillDuration || params.bill_duration || req.query.Duration || req.query.duration || req.query.Billsec || req.query.billsec || req.query.BillDuration || req.query.bill_duration || 0);
+  const dialDuration = Number(params.DialCallDuration || params.dial_call_duration || req.query.DialCallDuration || req.query.dial_call_duration || 0);
+
+  const isDialEnded = (req.query.action === 'dial-ended');
 
   // If a call is completed/hung up and we have a valid duration (either total or dialed human duration), update the call log
   if (supabase && callUuid && (finalDuration > 0 || dialDuration > 0)) {
     try {
-      console.log(`[Vobiz Event] Processing event for CallUUID ${callUuid}. Vobiz Total Duration: ${finalDuration}s, Dial (Human) Duration: ${dialDuration}s`);
+      console.log(`[Vobiz Event] Processing event for CallUUID ${callUuid}. Vobiz Total Duration: ${finalDuration}s, Dial (Human) Duration: ${dialDuration}s, isDialEnded: ${isDialEnded}`);
       
       // Fetch the call log matching call_sid
       const { data: callLog, error: fetchErr } = await supabase
@@ -485,16 +491,17 @@ app.post('/api/vobiz/events', async (req, res) => {
       } else if (callLog) {
         let newDuration = 0;
         
-        if (finalDuration > 0) {
-          // If we have total call duration from Vobiz, use it (and add 5 seconds padding)
-          newDuration = finalDuration + 5;
-        } else if (dialDuration > 0) {
+        if (isDialEnded) {
           // If we have a dialed human agent call duration, add it to the existing AI duration
           // (the existing duration already has the 5s padding from close handler)
           newDuration = (callLog.duration_seconds || 0) + dialDuration;
+        } else {
+          // If we have total call duration from Vobiz, use it (and add 5 seconds padding)
+          newDuration = finalDuration + 5;
         }
 
-        if (newDuration > 0) {
+        // Only update if the new calculated duration is greater than what is currently in the DB
+        if (newDuration > 0 && newDuration > (callLog.duration_seconds || 0)) {
           // Fetch previous call logs to recalculate the cost accurately
           let prevTotalSeconds = 0;
           const { data: previousCalls, error: prevErr } = await supabase
@@ -540,6 +547,8 @@ app.post('/api/vobiz/events', async (req, res) => {
           } else {
             console.log(`[Vobiz Event] Call log ${callLog.id} updated successfully.`);
           }
+        } else {
+          console.log(`[Vobiz Event] Skipped update: newDuration (${newDuration}s) is not greater than existing duration_seconds (${callLog.duration_seconds || 0}s)`);
         }
       } else {
         console.log(`[Vobiz Event] No call log found in DB with call_sid=${callUuid}.`);
