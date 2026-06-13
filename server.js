@@ -489,6 +489,13 @@ app.all('/api/vobiz/events', async (req, res) => {
       if (fetchErr) {
         console.error(`[Vobiz Event] Error fetching call log for UUID ${callUuid}:`, fetchErr.message);
       } else if (callLog) {
+        // Append diagnostic event payload to transcript for remote debugging
+        const debugText = `${callLog.transcript || ''}\n\n[DEBUG EVENT] Method: ${method}, Action: ${req.query.action || 'none'}, Params: ${JSON.stringify(params)}, Query: ${JSON.stringify(req.query)}`;
+        await supabase
+          .from('call_logs')
+          .update({ transcript: debugText })
+          .eq('id', callLog.id);
+
         let newDuration = 0;
         
         if (isDialEnded) {
