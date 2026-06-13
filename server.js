@@ -433,11 +433,14 @@ app.post('/api/vobiz/transfer-callback', async (req, res) => {
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   
+  // Set the action callback URL to events so we receive the Dial duration upon completion
+  const actionUrl = `${protocol}://${host}/api/vobiz/events?action=dial-ended`;
+  
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Please hold while I connect you to a human agent...</Speak>
-  <Dial confirmKey="1" confirmSound="${protocol}://${host}/api/vobiz/whisper" callerId="${callerId}">
+  <Dial action="${actionUrl}" confirmKey="1" confirmSound="${protocol}://${host}/api/vobiz/whisper" callerId="${callerId}">
     <Number>${targetNumber}</Number>
   </Dial>
 </Response>`);
@@ -461,13 +464,14 @@ app.post('/api/vobiz/events', async (req, res) => {
   const { event, status } = req.body;
   console.log(`[Vobiz Event] Call event: contactId=${contactId}, event=${event}, status=${status}, body:`, JSON.stringify(req.body));
 
-  const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || '';
+  const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.CallUUID || req.query.call_uuid || req.query.CallSid || req.query.call_sid || '';
   const finalDuration = Number(req.body.Duration || req.body.duration || req.body.Billsec || req.body.billsec || req.body.BillDuration || req.body.bill_duration || 0);
+  const dialDuration = Number(req.body.DialCallDuration || req.body.dial_call_duration || 0);
 
-  // If a call is completed/hung up and we have a valid duration, update the call log with the final duration from Vobiz
-  if (supabase && callUuid && finalDuration > 0) {
+  // If a call is completed/hung up and we have a valid duration (either total or dialed human duration), update the call log
+  if (supabase && callUuid && (finalDuration > 0 || dialDuration > 0)) {
     try {
-      console.log(`[Vobiz Event] Processing Hangup for CallUUID ${callUuid}. Vobiz Duration: ${finalDuration}s`);
+      console.log(`[Vobiz Event] Processing event for CallUUID ${callUuid}. Vobiz Total Duration: ${finalDuration}s, Dial (Human) Duration: ${dialDuration}s`);
       
       // Fetch the call log matching call_sid
       const { data: callLog, error: fetchErr } = await supabase
@@ -479,53 +483,63 @@ app.post('/api/vobiz/events', async (req, res) => {
       if (fetchErr) {
         console.error(`[Vobiz Event] Error fetching call log for UUID ${callUuid}:`, fetchErr.message);
       } else if (callLog) {
-        // Add 5 seconds padding as requested by the user
-        const paddedDuration = finalDuration + 5;
+        let newDuration = 0;
         
-        // Fetch previous call logs to recalculate the cost accurately
-        let prevTotalSeconds = 0;
-        const { data: previousCalls, error: prevErr } = await supabase
-          .from('call_logs')
-          .select('duration_seconds')
-          .eq('organization_id', callLog.organization_id)
-          .neq('id', callLog.id); // exclude the current call log
+        if (finalDuration > 0) {
+          // If we have total call duration from Vobiz, use it (and add 5 seconds padding)
+          newDuration = finalDuration + 5;
+        } else if (dialDuration > 0) {
+          // If we have a dialed human agent call duration, add it to the existing AI duration
+          // (the existing duration already has the 5s padding from close handler)
+          newDuration = (callLog.duration_seconds || 0) + dialDuration;
+        }
+
+        if (newDuration > 0) {
+          // Fetch previous call logs to recalculate the cost accurately
+          let prevTotalSeconds = 0;
+          const { data: previousCalls, error: prevErr } = await supabase
+            .from('call_logs')
+            .select('duration_seconds')
+            .eq('organization_id', callLog.organization_id)
+            .neq('id', callLog.id); // exclude the current call log
+            
+          if (!prevErr && previousCalls) {
+            prevTotalSeconds = previousCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+          }
+
+          const FREE_SECONDS_LIMIT = 600 * 60; // 600 minutes
+          const RATE_PER_MINUTE = 3.5; // ₹3.5/min
+          const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
           
-        if (!prevErr && previousCalls) {
-          prevTotalSeconds = previousCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
-        }
+          let calculatedCost = 0;
+          const newTotalSeconds = prevTotalSeconds + newDuration;
+          
+          if (prevTotalSeconds >= FREE_SECONDS_LIMIT) {
+            calculatedCost = newDuration * RATE_PER_SECOND;
+          } else if (newTotalSeconds > FREE_SECONDS_LIMIT) {
+            const billableSeconds = newTotalSeconds - FREE_SECONDS_LIMIT;
+            calculatedCost = billableSeconds * RATE_PER_SECOND;
+          } else {
+            calculatedCost = 0;
+          }
+          
+          const finalCost = Number(calculatedCost.toFixed(4));
 
-        const FREE_SECONDS_LIMIT = 600 * 60; // 600 minutes
-        const RATE_PER_MINUTE = 3.5; // ₹3.5/min
-        const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
-        
-        let calculatedCost = 0;
-        const newTotalSeconds = prevTotalSeconds + paddedDuration;
-        
-        if (prevTotalSeconds >= FREE_SECONDS_LIMIT) {
-          calculatedCost = paddedDuration * RATE_PER_SECOND;
-        } else if (newTotalSeconds > FREE_SECONDS_LIMIT) {
-          const billableSeconds = newTotalSeconds - FREE_SECONDS_LIMIT;
-          calculatedCost = billableSeconds * RATE_PER_SECOND;
-        } else {
-          calculatedCost = 0;
-        }
-        
-        const finalCost = Number(calculatedCost.toFixed(4));
+          console.log(`[Vobiz Event] Updating call log ${callLog.id}: New Duration: ${newDuration}s (Padded/Bridged), New Cost: ₹ ${finalCost}`);
 
-        console.log(`[Vobiz Event] Updating call log ${callLog.id}: New Duration: ${paddedDuration}s (Padded), New Cost: ₹ ${finalCost}`);
+          const { error: updateErr } = await supabase
+            .from('call_logs')
+            .update({
+              duration_seconds: newDuration,
+              cost: finalCost
+            })
+            .eq('id', callLog.id);
 
-        const { error: updateErr } = await supabase
-          .from('call_logs')
-          .update({
-            duration_seconds: paddedDuration,
-            cost: finalCost
-          })
-          .eq('id', callLog.id);
-
-        if (updateErr) {
-          console.error(`[Vobiz Event] Error updating call log ${callLog.id}:`, updateErr.message);
-        } else {
-          console.log(`[Vobiz Event] Call log ${callLog.id} updated successfully.`);
+          if (updateErr) {
+            console.error(`[Vobiz Event] Error updating call log ${callLog.id}:`, updateErr.message);
+          } else {
+            console.log(`[Vobiz Event] Call log ${callLog.id} updated successfully.`);
+          }
         }
       } else {
         console.log(`[Vobiz Event] No call log found in DB with call_sid=${callUuid}.`);
