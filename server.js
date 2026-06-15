@@ -899,7 +899,7 @@ wss.on('connection', async (ws, request) => {
                   contextStr += '--------------------------------------------------\n';
                   systemPromptText += contextStr;
                 }
-                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.';
+                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.\n\nIMPORTANT: Speak at a slightly slower, calm, and conversational pace. Take brief pauses between sentences to ensure clear, natural, and friendly communication.';
               })()
             }
           ]
