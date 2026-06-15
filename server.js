@@ -925,11 +925,15 @@ wss.on('connection', async (ws, request) => {
         
         for (const fc of response.toolCall.functionCalls) {
           if (fc.name === 'transferCall') {
-            // Prioritize the agent's custom transfer number if configured, otherwise fall back to the global default.
+            // Prioritize the dynamically assigned employee phone from leadContext if present.
+            // Otherwise, use the agent's custom transfer number from config, and finally fall back to the global default.
             // This prevents LLM hallucinations of dummy numbers (e.g. 9876543210) from overriding the correct destination.
-            const targetNumber = agentConfig.transfer_number || process.env.DEFAULT_HANDOVER_NUMBER || '+15555555555';
+            const targetNumber = (leadContext && (leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone))
+              || agentConfig.transfer_number
+              || process.env.DEFAULT_HANDOVER_NUMBER
+              || '+15555555555';
             
-            console.log(`[Gemini ToolCall] Initiating call transfer. Agent transfer_number: "${agentConfig.transfer_number || ''}", Env default: "${process.env.DEFAULT_HANDOVER_NUMBER || ''}", Resolved Target: "${targetNumber}", Pathname: "${pathname}"`);
+            console.log(`[Gemini ToolCall] Initiating call transfer. Context employee phone: "${(leadContext && (leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone)) || ''}", Agent transfer_number: "${agentConfig.transfer_number || ''}", Env default: "${process.env.DEFAULT_HANDOVER_NUMBER || ''}", Resolved Target: "${targetNumber}", Pathname: "${pathname}"`);
             
             let success = false;
             let errorMsg = '';
