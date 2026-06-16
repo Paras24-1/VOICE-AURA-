@@ -274,7 +274,7 @@ async function initiateVobizCall(contact, agentId) {
       to: cleanedTo,
       answer_url: answerUrl,
       answer_method: 'POST',
-      hangup_url: `${host}/api/vobiz/events?contactId=${contact.id || 'direct'}`,
+      hangup_url: `${host}/api/vobiz/events?contactId=${contact.id || 'direct'}&agentId=${agentId}`,
       hangup_method: 'POST'
     })
   });
@@ -614,7 +614,7 @@ app.all('/api/vobiz/events', async (req, res) => {
   const method = req.method;
   const params = method === 'GET' ? req.query : req.body;
   const event = params.event;
-  const status = params.status;
+  const status = params.status || params.CallStatus || '';
   
   console.log(`[Vobiz Event] Call event (${method}): contactId=${contactId}, event=${event}, status=${status}, query:`, JSON.stringify(req.query), `body:`, JSON.stringify(req.body));
 
@@ -708,7 +708,70 @@ app.all('/api/vobiz/events', async (req, res) => {
           console.log(`[Vobiz Event] Skipped update: newDuration (${newDuration}s) is not greater than existing duration_seconds (${callLog.duration_seconds || 0}s)`);
         }
       } else {
-        console.log(`[Vobiz Event] No call log found in DB with call_sid=${callUuid}.`);
+        console.log(`[Vobiz Event] No call log found in DB with call_sid=${callUuid}. Checking if call was missed/failed.`);
+        
+        const isMissedStatus = ['busy', 'no-answer', 'failed', 'timeout'].includes(String(status).toLowerCase()) ||
+                               (String(status).toLowerCase() === 'completed' && finalDuration === 0 && !isDialEnded);
+                               
+        if (isMissedStatus) {
+          let resolvedAgentId = req.query.agentId || req.body.agentId || '';
+          let resolvedOrgId = '';
+          
+          const fromPhone = params.From || params.from || '';
+          const toPhone = params.To || params.to || '';
+          const direction = params.Direction || params.direction || 'outbound';
+          
+          if (!resolvedAgentId) {
+            const virtualNumber = direction === 'inbound' ? toPhone : fromPhone;
+            if (virtualNumber) {
+              const cleanVirtual = virtualNumber.replace(/[^\d+]/g, '');
+              console.log(`[Vobiz Event] Looking up agent by telephone number: "${cleanVirtual}"`);
+              const { data: agent } = await supabase
+                .from('agents')
+                .select('id, organization_id')
+                .or(`telephone_number.ilike.%${cleanVirtual.slice(-10)}%`)
+                .maybeSingle();
+              if (agent) {
+                resolvedAgentId = agent.id;
+                resolvedOrgId = agent.organization_id;
+              }
+            }
+          } else {
+            const { data: agent } = await supabase
+              .from('agents')
+              .select('organization_id')
+              .eq('id', resolvedAgentId)
+              .maybeSingle();
+            if (agent) {
+              resolvedOrgId = agent.organization_id;
+            }
+          }
+          
+          if (resolvedOrgId && resolvedAgentId) {
+            let logStatus = 'failed';
+            const lowerStatus = String(status).toLowerCase();
+            if (lowerStatus.includes('busy')) logStatus = 'busy';
+            else if (lowerStatus.includes('no-answer') || lowerStatus.includes('no_answer')) logStatus = 'no-answer';
+            
+            console.log(`[Vobiz Event] Logging missed call for Org=${resolvedOrgId}, Agent=${resolvedAgentId}, CallUUID=${callUuid}, Status=${logStatus}`);
+            
+            await supabase
+              .from('call_logs')
+              .insert({
+                organization_id: resolvedOrgId,
+                agent_id: resolvedAgentId,
+                from_phone_number: fromPhone,
+                to_phone_number: toPhone,
+                duration_seconds: 0,
+                status: logStatus,
+                transcript: `[SYSTEM]: Call was not answered. Status: ${logStatus.toUpperCase()}.`,
+                cost: 0,
+                call_sid: callUuid
+              });
+          } else {
+            console.warn(`[Vobiz Event] Could not resolve agent/org to log missed call. resolvedAgentId=${resolvedAgentId}, resolvedOrgId=${resolvedOrgId}`);
+          }
+        }
       }
     } catch (err) {
       console.error('[Vobiz Event] Exception in completed call processing:', err);
