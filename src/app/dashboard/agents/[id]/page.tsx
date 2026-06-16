@@ -151,14 +151,13 @@ export default function AgentConfiguratorPage() {
     { name: "Portuguese", code: "PT" },
   ];
 
+  // Gemini Live API supported voices
   const voiceProfiles = [
-    "ElevenLabs - Rachel v2 (Feminine)",
-    "ElevenLabs - Prem (Masculine)",
-    "Azure neural - es-ES-ElviraNeural (Feminine)",
-    "Azure neural - en-US-GuyNeural (Masculine)",
-    "PlayHT v2 - jp-JP-Naoki (Masculine)",
-    "PlayHT v2 - fr-FR-Chantal (Feminine)",
-    "Custom Voice Profile ID: (Custom Model)",
+    { id: "Aoede",  label: "Aoede",  gender: "Female", tone: "Bright & expressive",   emoji: "✨" },
+    { id: "Kore",   label: "Kore",   gender: "Female", tone: "Warm & neutral",         emoji: "🌸" },
+    { id: "Puck",   label: "Puck",   gender: "Male",   tone: "Playful & light",        emoji: "🎭" },
+    { id: "Charon", label: "Charon", gender: "Male",   tone: "Deep & calm",            emoji: "🌊" },
+    { id: "Fenrir", label: "Fenrir", gender: "Male",   tone: "Bold & confident",       emoji: "⚡" },
   ];
 
   const handleCopyScript = () => {
@@ -392,21 +391,58 @@ export default function AgentConfiguratorPage() {
                 </select>
               </div>
 
-              {/* Voice Profile selector */}
-              <div className="space-y-2">
-                <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block">
-                  Voice Profile
-                </label>
-                <select
-                  value={agentData.voice_profile}
-                  onChange={(e) => setAgentData({ ...agentData, voice_profile: e.target.value })}
-                  className="w-full h-11 px-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 focus:outline-none focus:border-violet-500/50"
-                >
-                  <option value="">Select a voice profile...</option>
-                  {voiceProfiles.map(vp => (
-                    <option key={vp} value={vp}>{vp}</option>
-                  ))}
-                </select>
+              {/* Voice Profile picker */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block">
+                    Voice Profile
+                  </label>
+                  {agentData.voice_profile && (
+                    <span className="text-[10px] font-mono text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">
+                      {voiceProfiles.find(v => v.id === agentData.voice_profile)?.gender ?? ''} · Gemini Live
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {voiceProfiles.map(vp => {
+                    const isSelected = agentData.voice_profile === vp.id;
+                    return (
+                      <button
+                        key={vp.id}
+                        type="button"
+                        onClick={() => setAgentData({ ...agentData, voice_profile: vp.id })}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? 'border-violet-500/60 bg-violet-500/10 ring-1 ring-violet-500/30'
+                            : 'border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900'
+                        }`}
+                      >
+                        <span className="text-xl leading-none">{vp.emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-semibold ${ isSelected ? 'text-violet-300' : 'text-zinc-200' }`}>
+                              {vp.label}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                              vp.gender === 'Female'
+                                ? 'bg-pink-500/15 text-pink-400'
+                                : 'bg-blue-500/15 text-blue-400'
+                            }`}>
+                              {vp.gender}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 truncate">{vp.tone}</p>
+                        </div>
+                        {isSelected && (
+                          <span className="w-2 h-2 rounded-full bg-violet-400 shrink-0 animate-pulse" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {!agentData.voice_profile && (
+                  <p className="text-[11px] text-zinc-500">Select a voice — each tenant can have a different one.</p>
+                )}
               </div>
 
               {/* Telephone number */}

@@ -1113,7 +1113,10 @@ wss.on('connection', async (ws, request) => {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: "Aoede" // Supported voices: Aoede, Charon, Fenrir, Kore, Puck
+                // Per-tenant voice: set via agent settings dashboard (voice_profile column in agents table)
+                // Supported values: Aoede (female/bright), Kore (female/warm), Puck (male/playful),
+                //                   Charon (male/deep), Fenrir (male/bold)
+                voiceName: agentConfig.voice_profile || "Aoede"
               }
             }
           }
