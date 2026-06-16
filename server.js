@@ -767,10 +767,10 @@ wss.on('connection', async (ws, request) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const pathname = url.pathname;
   
-  let agentId = url.searchParams.get('agentId');
-  let contactId = url.searchParams.get('contactId');
-  let callSid = url.searchParams.get('callSid') || url.searchParams.get('callUuid');
-  let customerPhone = url.searchParams.get('customerPhone') || '';
+  let agentId = url.searchParams.get('agentId') || url.searchParams.get('amp;agentId');
+  let contactId = url.searchParams.get('contactId') || url.searchParams.get('amp;contactId');
+  let callSid = url.searchParams.get('callSid') || url.searchParams.get('callUuid') || url.searchParams.get('amp;callUuid') || url.searchParams.get('amp;callSid');
+  let customerPhone = url.searchParams.get('customerPhone') || url.searchParams.get('amp;customerPhone') || '';
 
   // Handle path-based routing for Vobiz streams (e.g. /vobiz-stream/agentId/contactId)
   if (pathname.startsWith('/vobiz-stream/')) {
@@ -786,7 +786,7 @@ wss.on('connection', async (ws, request) => {
   console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}, CallSid=${callSid}`);
 
   // Extract custom lead context if passed via query parameter or in-memory map
-  let contextParam = url.searchParams.get('context');
+  let contextParam = url.searchParams.get('context') || url.searchParams.get('amp;context');
   let leadContext = null;
   if (contextParam) {
     try {
