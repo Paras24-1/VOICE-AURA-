@@ -58,6 +58,68 @@ function formatTransferNumber(number, defaultCallerId = '') {
   return cleaned;
 }
 
+// CRM Database Client Initialization (points to WhatsApp Dashboard database)
+const crmSupabaseUrl = process.env.CRM_SUPABASE_URL;
+const crmSupabaseServiceKey = process.env.CRM_SUPABASE_SERVICE_ROLE_KEY;
+let crmSupabase = null;
+
+if (crmSupabaseUrl && crmSupabaseServiceKey) {
+  crmSupabase = createClient(crmSupabaseUrl, crmSupabaseServiceKey);
+  console.log('[CRM Database] Client initialized successfully for cross-database assignments.');
+} else {
+  console.warn('[CRM Database] Warning: Missing CRM_SUPABASE_URL or CRM_SUPABASE_SERVICE_ROLE_KEY environment variables. Inbound employee routing fallback will not be active.');
+}
+
+// Helper to query CRM database and resolve the assigned employee for a given customer phone number
+async function lookupCrmAssignedEmployee(customerPhone) {
+  if (!crmSupabase || !customerPhone) return null;
+  try {
+    const cleanPhone = customerPhone.replace(/[^\d]/g, '');
+    if (!cleanPhone) return null;
+    const last10 = cleanPhone.slice(-10);
+    
+    console.log(`[CRM Lookup] Searching CRM database for customer phone matching last 10 digits: "${last10}"`);
+    
+    // 1. Find conversation
+    const { data: conversation, error: convError } = await crmSupabase
+      .from('conversations')
+      .select('id, assigned_to')
+      .ilike('phone_number', `%${last10}%`)
+      .maybeSingle();
+      
+    if (convError || !conversation) {
+      console.log(`[CRM Lookup] No conversation found in CRM database for "${last10}"`);
+      return null;
+    }
+    
+    if (!conversation.assigned_to) {
+      console.log(`[CRM Lookup] Conversation found but not assigned to any employee.`);
+      return null;
+    }
+    
+    // 2. Fetch employee details
+    const { data: employee, error: empError } = await crmSupabase
+      .from('users')
+      .select('name, phone')
+      .eq('id', conversation.assigned_to)
+      .maybeSingle();
+      
+    if (empError || !employee) {
+      console.log(`[CRM Lookup] Failed to fetch employee details for user ID ${conversation.assigned_to}`);
+      return null;
+    }
+    
+    console.log(`[CRM Lookup] Found assigned employee: ${employee.name} (Phone: ${employee.phone})`);
+    return {
+      assigned_employee_name: employee.name || '',
+      assigned_employee_phone: employee.phone || ''
+    };
+  } catch (err) {
+    console.error('[CRM Lookup] Error searching CRM database:', err);
+    return null;
+  }
+}
+
 // Helper to process system prompt templates for inbound vs outbound calls
 function processSystemPrompt(systemPromptText, leadContext) {
   if (leadContext && Object.keys(leadContext).length > 0) {
@@ -809,6 +871,22 @@ wss.on('connection', async (ws, request) => {
           activeCallContexts.set(callSid, leadContext);
         }
       }
+    }
+  }
+
+  // Fallback: Query CRM database directly if leadContext is missing or does not have assigned employee details
+  if ((!leadContext || !leadContext.assigned_employee_phone) && customerPhone) {
+    console.log(`[WebSocket] Lead context or employee phone is missing. Querying CRM database fallback for customerPhone: ${customerPhone}`);
+    const crmEmployee = await lookupCrmAssignedEmployee(customerPhone);
+    if (crmEmployee) {
+      leadContext = {
+        ...(leadContext || {}),
+        ...crmEmployee
+      };
+      if (callSid) {
+        activeCallContexts.set(callSid, leadContext);
+      }
+      console.log(`[WebSocket] Resolved and merged CRM employee context:`, JSON.stringify(crmEmployee));
     }
   }
 
