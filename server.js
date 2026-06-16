@@ -386,7 +386,7 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
-  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?callUuid=${callUuid}&customerPhone=${encodeURIComponent(fromNumber)}</Stream>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?callUuid=${callUuid}&amp;customerPhone=${encodeURIComponent(fromNumber)}</Stream>
 </Response>`);
 });
 
@@ -417,9 +417,9 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
 
   // Check if we have context stored for this callUuid to append it to the websocket URL
   const contextData = activeCallContexts.get(callUuid);
-  let streamUrl = `${protocol}://${host}/vobiz-stream/${agentId}/${contactId || 'direct'}?callUuid=${callUuid}&customerPhone=${encodeURIComponent(customerPhone || '')}`;
+  let streamUrl = `${protocol}://${host}/vobiz-stream/${agentId}/${contactId || 'direct'}?callUuid=${callUuid}&amp;customerPhone=${encodeURIComponent(customerPhone || '')}`;
   if (contextData) {
-    streamUrl += `&context=${encodeURIComponent(JSON.stringify(contextData))}`;
+    streamUrl += `&amp;context=${encodeURIComponent(JSON.stringify(contextData))}`;
   }
 
   res.type('text/xml');
