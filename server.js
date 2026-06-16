@@ -161,7 +161,7 @@ async function initiateVobizCall(contact, agentId) {
   const cleanedFrom = callerId.replace(/[^\d+]/g, '');
 
   const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
-  const answerUrl = `${host}/api/vobiz/outbound-answer?agentId=${agentId}${contact.id ? `&contactId=${contact.id}` : ''}&customerPhone=${encodeURIComponent(cleanedTo)}`;
+  const answerUrl = `${host}/api/vobiz/outbound-answer/${agentId}/${encodeURIComponent(cleanedTo)}${contact.id ? `/${contact.id}` : ''}`;
 
   console.log(`[Vobiz] Placing outbound call: from=${cleanedFrom}, to=${cleanedTo} (Contact Name: ${targetName})`);
 
@@ -419,9 +419,17 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date() });
 });
 
-// Vobiz Outbound Answer webhook
-app.post('/api/vobiz/outbound-answer', async (req, res) => {
-  const { contactId, agentId, customerPhone } = req.query;
+// Vobiz Outbound Answer webhook (supports path params to prevent carrier query parameter stripping)
+app.post(['/api/vobiz/outbound-answer', '/api/vobiz/outbound-answer/:agentId/:customerPhone/:contactId?'], async (req, res) => {
+  const agentId = req.params.agentId || req.query.agentId || '';
+  const contactId = req.params.contactId || req.query.contactId || '';
+  
+  // Resolve customer phone dynamically from path params, query params, or webhook body
+  let customerPhone = req.params.customerPhone || req.query.customerPhone || req.body.To || req.body.to || req.query.To || req.query.to || '';
+  if (!customerPhone) {
+    customerPhone = req.body.From || req.body.from || req.query.From || req.query.from || '';
+  }
+
   const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.call_uuid || req.query.CallUUID || '';
   console.log(`[Vobiz Webhook] Outbound call answered for contactId=${contactId}, agentId=${agentId}, CallUUID=${callUuid}, Customer Phone: ${customerPhone || 'N/A'}`);
 
