@@ -33,6 +33,30 @@ if (supabaseUrl && supabaseServiceKey) {
 // Active campaigns map to track running dialing loops
 const activeCampaigns = new Map();
 const activeCallContexts = new Map(); // Map to store call-specific lead context (e.g. from n8n)
+const activeCallContextsByPhone = new Map(); // Map to resolve context via customer phone number fallback
+
+// Helper to format target transfer numbers to E.164 format
+function formatTransferNumber(number, defaultCallerId = '') {
+  if (!number) return number;
+  let cleaned = number.replace(/[^\d+]/g, '');
+  if (cleaned.length === 10 && !cleaned.startsWith('+')) {
+    let countryCode = '+91'; // Default country code
+    const callerSource = defaultCallerId || process.env.VOBIZ_CALLER_ID || '';
+    if (callerSource) {
+      const cleanedCaller = callerSource.replace(/[^\d+]/g, '');
+      if (cleanedCaller.startsWith('+')) {
+        const prefix = cleanedCaller.slice(0, -10);
+        if (prefix) countryCode = prefix;
+      } else if (cleanedCaller.length > 10) {
+        countryCode = '+' + cleanedCaller.slice(0, -10);
+      }
+    }
+    cleaned = countryCode + cleaned;
+  } else if (!cleaned.startsWith('+') && cleaned.length > 10) {
+    cleaned = '+' + cleaned;
+  }
+  return cleaned;
+}
 
 // Helper to process system prompt templates for inbound vs outbound calls
 function processSystemPrompt(systemPromptText, leadContext) {
@@ -416,7 +440,19 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
 
   // Check if we have context stored for this callUuid to append it to the websocket URL
-  const contextData = activeCallContexts.get(callUuid);
+  let contextData = activeCallContexts.get(callUuid);
+  if (!contextData && customerPhone) {
+    const cleanPhone = customerPhone.replace(/[^\d]/g, '');
+    if (cleanPhone) {
+      const phoneKey = cleanPhone.slice(-10);
+      contextData = activeCallContextsByPhone.get(phoneKey);
+      if (contextData) {
+        console.log(`[Vobiz Webhook] Resolved context from phone key ${phoneKey} for CallUUID ${callUuid}`);
+        activeCallContexts.set(callUuid, contextData);
+      }
+    }
+  }
+
   let streamUrl = `${protocol}://${host}/vobiz-stream/${agentId}/${contactId || 'direct'}?callUuid=${callUuid}&amp;customerPhone=${encodeURIComponent(customerPhone || '')}`;
   if (contextData) {
     streamUrl += `&amp;context=${encodeURIComponent(JSON.stringify(contextData))}`;
@@ -679,6 +715,13 @@ app.post('/api/calls/trigger', async (req, res) => {
     if (context) {
       activeCallContexts.set(callUuid, context);
       console.log(`[Trigger Call API] Stored context for CallUUID ${callUuid}:`, JSON.stringify(context));
+
+      const cleanPhone = phone_number.replace(/[^\d]/g, '');
+      if (cleanPhone) {
+        const phoneKey = cleanPhone.slice(-10);
+        activeCallContextsByPhone.set(phoneKey, context);
+        console.log(`[Trigger Call API] Stored context by phone key ${phoneKey}:`, JSON.stringify(context));
+      }
     }
 
     return res.json({
@@ -742,6 +785,19 @@ wss.on('connection', async (ws, request) => {
   }
   if (!leadContext && callSid) {
     leadContext = activeCallContexts.get(callSid);
+  }
+  if (!leadContext && customerPhone) {
+    const cleanPhone = customerPhone.replace(/[^\d]/g, '');
+    if (cleanPhone) {
+      const phoneKey = cleanPhone.slice(-10);
+      leadContext = activeCallContextsByPhone.get(phoneKey);
+      if (leadContext) {
+        console.log(`[WebSocket] Resolved leadContext from phone key ${phoneKey} for callSid/callUuid ${callSid}`);
+        if (callSid) {
+          activeCallContexts.set(callSid, leadContext);
+        }
+      }
+    }
   }
 
   // Fetch callSid from database as fallback for outbound campaign calls if not in query params
@@ -932,12 +988,14 @@ wss.on('connection', async (ws, request) => {
             // Prioritize the dynamically assigned employee phone from leadContext if present.
             // Otherwise, use the agent's custom transfer number from config, and finally fall back to the global default.
             // This prevents LLM hallucinations of dummy numbers (e.g. 9876543210) from overriding the correct destination.
-            const targetNumber = (leadContext && (leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone))
+            let rawTarget = (leadContext && (leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone))
               || agentConfig.transfer_number
               || process.env.DEFAULT_HANDOVER_NUMBER
               || '+15555555555';
             
-            console.log(`[Gemini ToolCall] Initiating call transfer. Context employee phone: "${(leadContext && (leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone)) || ''}", Agent transfer_number: "${agentConfig.transfer_number || ''}", Env default: "${process.env.DEFAULT_HANDOVER_NUMBER || ''}", Resolved Target: "${targetNumber}", Pathname: "${pathname}"`);
+            const targetNumber = formatTransferNumber(rawTarget, agentConfig.telephone_number);
+            
+            console.log(`[Gemini ToolCall] Initiating call transfer. Context employee phone: "${(leadContext && (leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone)) || ''}", Agent transfer_number: "${agentConfig.transfer_number || ''}", Env default: "${process.env.DEFAULT_HANDOVER_NUMBER || ''}", Resolved Target: "${targetNumber}" (raw: "${rawTarget}"), Pathname: "${pathname}"`);
             
             let success = false;
             let errorMsg = '';
