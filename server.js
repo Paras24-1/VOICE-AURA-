@@ -164,7 +164,7 @@ async function initiateVobizCall(contact, agentId) {
   }
 
   const data = await response.json();
-  return { simulated: false, callSid: data.call_sid || data.id || data.CallUUID || data.call_uuid };
+  return { simulated: false, callSid: data.call_sid || data.id || data.CallUUID || data.call_uuid || data.request_uuid || data.RequestUUID };
 }
 
 // Campaign Background Queue Processor
