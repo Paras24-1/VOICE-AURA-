@@ -420,7 +420,11 @@ app.get('/health', (req, res) => {
 });
 
 // Vobiz Outbound Answer webhook (supports path params to prevent carrier query parameter stripping)
-app.post(['/api/vobiz/outbound-answer', '/api/vobiz/outbound-answer/:agentId/:customerPhone/:contactId?'], async (req, res) => {
+app.post([
+  '/api/vobiz/outbound-answer',
+  '/api/vobiz/outbound-answer/:agentId/:customerPhone',
+  '/api/vobiz/outbound-answer/:agentId/:customerPhone/:contactId'
+], async (req, res) => {
   const agentId = req.params.agentId || req.query.agentId || '';
   const contactId = req.params.contactId || req.query.contactId || '';
   
