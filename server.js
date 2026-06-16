@@ -58,6 +58,41 @@ function formatTransferNumber(number, defaultCallerId = '') {
   return cleaned;
 }
 
+// Helper to identify dummy/hallucinated phone numbers
+function isDummyPhoneNumber(phone) {
+  if (!phone) return true;
+  // Remove non-digit characters
+  const digits = phone.replace(/[^\d]/g, '');
+  if (!digits || digits.length < 8) return true;
+  
+  // Check common dummy sequences
+  const dummySequences = [
+    '123456789',
+    '987654321',
+    '012345678',
+    '876543210',
+    '1234567890',
+    '9876543210',
+    '5555555'
+  ];
+  for (const seq of dummySequences) {
+    if (digits.includes(seq)) return true;
+  }
+
+  // Check repeating digits (e.g., all 9s, all 1s, etc.)
+  const firstDigit = digits[0];
+  let allRepeating = true;
+  for (let i = 1; i < digits.length; i++) {
+    if (digits[i] !== firstDigit) {
+      allRepeating = false;
+      break;
+    }
+  }
+  if (allRepeating) return true;
+
+  return false;
+}
+
 // CRM Database Client Initialization (points to WhatsApp Dashboard database)
 const crmSupabaseUrl = process.env.CRM_SUPABASE_URL;
 const crmSupabaseServiceKey = process.env.CRM_SUPABASE_SERVICE_ROLE_KEY;
@@ -1075,13 +1110,30 @@ wss.on('connection', async (ws, request) => {
         
         for (const fc of response.toolCall.functionCalls) {
           if (fc.name === 'transferCall') {
-            // Prioritize the dynamically assigned employee phone from leadContext if present.
-            // Otherwise, use the agent's custom transfer number from config, and finally fall back to the global default.
-            // This prevents LLM hallucinations of dummy numbers (e.g. 9876543210) from overriding the correct destination.
-            let rawTarget = (leadContext && (leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone))
-              || agentConfig.transfer_number
-              || process.env.DEFAULT_HANDOVER_NUMBER
-              || '+15555555555';
+            // Context diagnostics logging
+            console.log(`[Gemini ToolCall] Diagnosing closure leadContext:`, JSON.stringify(leadContext));
+
+            let rawTarget = '';
+            
+            // 1. Prioritize LLM tool call argument targetNumber if it is a valid, non-dummy number
+            if (fc.args && fc.args.targetNumber && !isDummyPhoneNumber(fc.args.targetNumber)) {
+              rawTarget = fc.args.targetNumber;
+              console.log(`[Gemini ToolCall] Using valid targetNumber from LLM argument: "${rawTarget}"`);
+            }
+            
+            // 2. Fallback to dynamically assigned employee phone from leadContext
+            if (!rawTarget && leadContext && (leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone)) {
+              rawTarget = leadContext.assigned_employee_phone || leadContext.assignedEmployeePhone;
+              console.log(`[Gemini ToolCall] Using employee phone from leadContext: "${rawTarget}"`);
+            }
+            
+            // 3. Fallback to agent custom transfer number or global default
+            if (!rawTarget) {
+              rawTarget = agentConfig.transfer_number
+                || process.env.DEFAULT_HANDOVER_NUMBER
+                || '+15555555555';
+              console.log(`[Gemini ToolCall] Using agent/default fallback number: "${rawTarget}"`);
+            }
             
             const targetNumber = formatTransferNumber(rawTarget, agentConfig.telephone_number);
             
