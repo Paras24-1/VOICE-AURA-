@@ -497,8 +497,16 @@ app.post('/api/twilio/incoming', async (req, res) => {
 app.post('/api/vobiz/incoming', async (req, res) => {
   const agentId = req.query.agentId || 'default';
   const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.CallUUID || req.query.call_uuid || '';
-  const fromNumber = req.body.From || req.body.from || req.query.From || req.query.from || '';
-  console.log(`[Vobiz] Incoming call received, routing to agent: ${agentId}, CallUUID: ${callUuid}, From: ${fromNumber}`);
+  // Vobiz sends caller ID under various field names — try all of them
+  const fromNumber = req.body.From || req.body.from || req.body.CallerID || req.body.caller_id || 
+    req.body.Caller || req.body.caller || req.body.CallerNumber || req.body.caller_number ||
+    req.body.OriginatorCallerID || req.body.originator_caller_id || req.body.ANI || req.body.ani ||
+    req.body.CallerId || req.body.callerid || req.body.cli || req.body.CLI ||
+    req.query.From || req.query.from || req.query.CallerID || req.query.caller_id || 
+    req.query.Caller || req.query.caller || req.query.ANI || req.query.ani || '';
+  console.log(`[Vobiz] Incoming call received, routing to agent: ${agentId}, CallUUID: ${callUuid}, From: ${fromNumber || '(no phone captured)'}`);
+  console.log(`[Vobiz] Incoming webhook body fields:`, JSON.stringify(req.body));
+
   
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
