@@ -91,8 +91,7 @@ CONVERSATION FLOW:`;
 async function initiateVobizCall(contact, agentId) {
   const authId = process.env.VOBIZ_AUTH_ID;
   const authToken = process.env.VOBIZ_AUTH_TOKEN;
-  const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
-  const answerUrl = `${host}/api/vobiz/outbound-answer?agentId=${agentId}${contact.id ? `&contactId=${contact.id}` : ''}`;
+
 
   let callerId = process.env.VOBIZ_CALLER_ID;
 
@@ -136,6 +135,9 @@ async function initiateVobizCall(contact, agentId) {
   // Clean phone numbers: remove spaces, dashes, parentheses, keep digits and leading '+'
   const cleanedTo = targetPhone.replace(/[^\d+]/g, '');
   const cleanedFrom = callerId.replace(/[^\d+]/g, '');
+
+  const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
+  const answerUrl = `${host}/api/vobiz/outbound-answer?agentId=${agentId}${contact.id ? `&contactId=${contact.id}` : ''}&customerPhone=${encodeURIComponent(cleanedTo)}`;
 
   console.log(`[Vobiz] Placing outbound call: from=${cleanedFrom}, to=${cleanedTo} (Contact Name: ${targetName})`);
 
@@ -374,7 +376,8 @@ app.post('/api/twilio/incoming', async (req, res) => {
 app.post('/api/vobiz/incoming', async (req, res) => {
   const agentId = req.query.agentId || 'default';
   const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.CallUUID || req.query.call_uuid || '';
-  console.log(`[Vobiz] Incoming call received, routing to agent: ${agentId}, CallUUID: ${callUuid}`);
+  const fromNumber = req.body.From || req.body.from || req.query.From || req.query.from || '';
+  console.log(`[Vobiz] Incoming call received, routing to agent: ${agentId}, CallUUID: ${callUuid}, From: ${fromNumber}`);
   
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
@@ -383,7 +386,7 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
-  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?callUuid=${callUuid}</Stream>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?callUuid=${callUuid}&customerPhone=${encodeURIComponent(fromNumber)}</Stream>
 </Response>`);
 });
 
@@ -394,9 +397,9 @@ app.get('/health', (req, res) => {
 
 // Vobiz Outbound Answer webhook
 app.post('/api/vobiz/outbound-answer', async (req, res) => {
-  const { contactId, agentId } = req.query;
+  const { contactId, agentId, customerPhone } = req.query;
   const callUuid = req.body.CallUUID || req.body.call_uuid || req.body.CallSid || req.body.call_sid || req.query.call_uuid || req.query.CallUUID || '';
-  console.log(`[Vobiz Webhook] Outbound call answered for contactId=${contactId}, agentId=${agentId}, CallUUID=${callUuid}`);
+  console.log(`[Vobiz Webhook] Outbound call answered for contactId=${contactId}, agentId=${agentId}, CallUUID=${callUuid}, Customer Phone: ${customerPhone || 'N/A'}`);
 
   if (supabase && contactId && contactId !== 'direct') {
     try {
@@ -414,7 +417,7 @@ app.post('/api/vobiz/outbound-answer', async (req, res) => {
 
   // Check if we have context stored for this callUuid to append it to the websocket URL
   const contextData = activeCallContexts.get(callUuid);
-  let streamUrl = `${protocol}://${host}/vobiz-stream/${agentId}/${contactId || 'direct'}?callUuid=${callUuid}`;
+  let streamUrl = `${protocol}://${host}/vobiz-stream/${agentId}/${contactId || 'direct'}?callUuid=${callUuid}&customerPhone=${encodeURIComponent(customerPhone || '')}`;
   if (contextData) {
     streamUrl += `&context=${encodeURIComponent(JSON.stringify(contextData))}`;
   }
@@ -712,6 +715,7 @@ wss.on('connection', async (ws, request) => {
   let agentId = url.searchParams.get('agentId');
   let contactId = url.searchParams.get('contactId');
   let callSid = url.searchParams.get('callSid') || url.searchParams.get('callUuid');
+  let customerPhone = url.searchParams.get('customerPhone') || '';
 
   // Handle path-based routing for Vobiz streams (e.g. /vobiz-stream/agentId/contactId)
   if (pathname.startsWith('/vobiz-stream/')) {
@@ -1264,13 +1268,22 @@ wss.on('connection', async (ws, request) => {
         const finalCost = Number(calculatedCost.toFixed(4));
         console.log(`[Billing] Org: ${agentConfig.organization_id}. Prev duration: ${prevTotalSeconds}s. Call duration: ${callDuration}s. New total: ${newTotalSeconds}s. Calculated Cost: ₹ ${finalCost}`);
 
+        let logFromPhone = fromPhone;
+        let logToPhone = agentConfig.name;
+        
+        if (fromPhone === 'Vobiz VoiceXML') {
+          logFromPhone = customerPhone || 'Vobiz VoiceXML';
+        } else if (fromPhone === 'Vobiz Outbound') {
+          logToPhone = customerPhone || 'Vobiz Outbound';
+        }
+
         const { error } = await supabase
           .from('call_logs')
           .insert({
             organization_id: agentConfig.organization_id,
             agent_id: agentConfig.id,
-            from_phone_number: fromPhone,
-            to_phone_number: agentConfig.name,
+            from_phone_number: logFromPhone,
+            to_phone_number: logToPhone,
             duration_seconds: callDuration,
             status: 'completed',
             transcript: transcriptString,
