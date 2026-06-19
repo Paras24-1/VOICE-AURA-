@@ -114,7 +114,7 @@ export default function AgentsPage() {
         .select('*, agents(name)')
         .eq('organization_id', membership.organization_id)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(500);
       if (error) {
         console.error('Fetch call logs error:', error);
       }

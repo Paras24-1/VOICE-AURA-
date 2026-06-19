@@ -33,6 +33,7 @@ export default function CallLogsPage() {
   const supabase = createClient();
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState<number>(0);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
   const [logsSearchTerm, setLogsSearchTerm] = useState("");
 
@@ -53,12 +54,20 @@ export default function CallLogsPage() {
         return;
       }
 
+      // Get the real total count (lightweight, no row data)
+      const { count } = await supabase
+        .from("call_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("organization_id", membership.organization_id);
+      setTotalCount(count ?? 0);
+
+      // Fetch up to 500 most recent logs for the table
       const { data: logs, error } = await supabase
         .from("call_logs")
         .select("*, agents(name)")
         .eq("organization_id", membership.organization_id)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(500);
 
       if (error) {
         console.error("Fetch call logs error:", error);
@@ -100,6 +109,11 @@ export default function CallLogsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 self-start sm:self-auto">
+          {!logsLoading && (
+            <span className="text-xs font-mono text-zinc-400 bg-zinc-950 border border-zinc-800 px-3 py-1.5 rounded-xl">
+              Total: <span className="text-violet-400 font-bold">{totalCount.toLocaleString()}</span> calls
+            </span>
+          )}
           <button
             onClick={fetchCallLogs}
             className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all flex items-center gap-2 text-xs cursor-pointer"

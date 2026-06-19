@@ -61,7 +61,7 @@ export default function DashboardPage() {
       const daysBack = timeRange === "24h" ? 1 : timeRange === "7d" ? 7 : 30;
       const since = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString();
 
-      // Fetch call logs with agent names joined
+      // Fetch call logs for display (last 50) — only for the table UI
       const { data: logs } = await supabase
         .from("call_logs")
         .select("*, agents(name)")
@@ -70,6 +70,13 @@ export default function DashboardPage() {
         .order("created_at", { ascending: false })
         .limit(50);
 
+      // Get EXACT total call count for the stat card (no row fetch, just the number)
+      const { count: exactTotalCalls } = await supabase
+        .from("call_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("organization_id", currentOrgId)
+        .gte("created_at", since);
+
       // Fetch all call logs for exact duration and cost calculation
       const { data: allLogsForBilling } = await supabase
         .from("call_logs")
@@ -77,18 +84,20 @@ export default function DashboardPage() {
         .eq("organization_id", currentOrgId);
 
       const logsArr = logs || [];
-      const totalDurationSeconds = (allLogsForBilling || []).reduce((sum: number, l) => sum + (l.duration_seconds || 0), 0);
+      const allBilling = allLogsForBilling || [];
+      const totalDurationSeconds = allBilling.reduce((sum: number, l) => sum + (l.duration_seconds || 0), 0);
       const totalMinutes = totalDurationSeconds / 60;
-      const totalCost = (allLogsForBilling || []).reduce((sum: number, l) => sum + (Number(l.cost) || 0), 0);
-      const avgDuration = logsArr.length > 0
-        ? Math.round(logsArr.reduce((s: number, l: CallLog) => s + (l.duration_seconds || 0), 0) / logsArr.length)
+      const totalCost = allBilling.reduce((sum: number, l) => sum + (Number(l.cost) || 0), 0);
+      // avgDuration from the full billing set for accuracy
+      const avgDuration = allBilling.length > 0
+        ? Math.round(totalDurationSeconds / allBilling.length)
         : 0;
 
       const minutesLimit = 600; // 600 free minutes limit
 
       setCallLogs(logsArr);
       setStats({
-        totalCalls: logsArr.length,
+        totalCalls: exactTotalCalls ?? logsArr.length,
         totalMinutes: Number(totalMinutes.toFixed(2)),
         minutesLimit,
         avgDuration,
