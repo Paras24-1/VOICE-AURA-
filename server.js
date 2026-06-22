@@ -585,9 +585,14 @@ app.post([
 
 // Vobiz Transfer Callback webhook
 app.post('/api/vobiz/transfer-callback', async (req, res) => {
-  const targetNumber = req.query.targetNumber || process.env.DEFAULT_HANDOVER_NUMBER || '+15555555555';
-  const callerId = req.query.callerId || process.env.VOBIZ_CALLER_ID || '';
-  console.log(`[Vobiz Transfer Webhook] Transferring call to: ${targetNumber}, callerId: ${callerId}`);
+  const targetNumberRaw = req.query.targetNumber || process.env.DEFAULT_HANDOVER_NUMBER || '915555555555';
+  const callerIdRaw = req.query.callerId || process.env.VOBIZ_CALLER_ID || '';
+  
+  // Strip leading '+' sign as Vobiz/telephony gateways do not support the '+' symbol in VoiceXML Dialing
+  const targetNumber = targetNumberRaw.replace(/^\+/, '');
+  const callerId = callerIdRaw.replace(/^\+/, '');
+  
+  console.log(`[Vobiz Transfer Webhook] Transferring call to: ${targetNumber} (raw: ${targetNumberRaw}), callerId: ${callerId} (raw: ${callerIdRaw})`);
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   
