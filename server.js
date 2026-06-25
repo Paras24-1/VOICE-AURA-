@@ -35,6 +35,7 @@ const activeCampaigns = new Map();
 const activeCallContexts = new Map(); // Map to store call-specific lead context (e.g. from n8n)
 const activeCallContextsByPhone = new Map(); // Map to resolve context via customer phone number fallback
 const pendingCallRecordings = new Map(); // Map to cache recording URLs to resolve race condition
+const callDebugLogs = new Map(); // Map to store programmatic recording debug logs
 
 // Helper to format target transfer numbers to E.164 format
 function formatTransferNumber(number, defaultCallerId = '') {
@@ -209,17 +210,27 @@ CONVERSATION FLOW:`;
   }
 }
 
+// Helper to add call debugging logs
+function addCallDebugLog(callUuid, msg) {
+  if (!callUuid) return;
+  if (!callDebugLogs.has(callUuid)) {
+    callDebugLogs.set(callUuid, []);
+  }
+  callDebugLogs.get(callUuid).push(`[${new Date().toISOString()}] ${msg}`);
+}
+
 // Programmatic call recording trigger via Vobiz API
 async function startVobizRecording(callUuid) {
   const authId = process.env.VOBIZ_AUTH_ID;
   const authToken = process.env.VOBIZ_AUTH_TOKEN;
+  addCallDebugLog(callUuid, `startVobizRecording invoked. authId exists: ${!!authId}, authToken exists: ${!!authToken}`);
   if (!authId || !authToken || !callUuid) return;
 
   const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
   const callbackUrl = `${host}/api/vobiz/events`;
 
   const url = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
-  console.log(`[Vobiz Recording] Requesting to start recording for CallUUID: ${callUuid}, Callback: ${callbackUrl}`);
+  addCallDebugLog(callUuid, `Requesting Vobiz API: POST ${url} with callback: ${callbackUrl}`);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -237,14 +248,11 @@ async function startVobizRecording(callUuid) {
         callbackMethod: 'POST'
       })
     });
-    if (!response.ok) {
-      const txt = await response.text();
-      console.error(`[Vobiz Recording] Failed to start recording: ${response.status} - ${txt}`);
-    } else {
-      console.log(`[Vobiz Recording] Programmatic recording started successfully for CallUUID: ${callUuid}`);
-    }
+    const status = response.status;
+    const txt = await response.text();
+    addCallDebugLog(callUuid, `Vobiz API Response Status: ${status}, Body: ${txt}`);
   } catch (err) {
-    console.error(`[Vobiz Recording] Error starting recording:`, err.message);
+    addCallDebugLog(callUuid, `Vobiz API Error: ${err.message}`);
   }
 }
 
@@ -1804,6 +1812,12 @@ wss.on('connection', async (ws, request) => {
           pendingCallRecordings.delete(callSid);
         }
 
+        const debugLogs = callSid ? (callDebugLogs.get(callSid) || []) : [];
+        if (callSid) {
+          callDebugLogs.delete(callSid);
+        }
+        const finalTranscript = transcriptString + (debugLogs.length > 0 ? `\n\n[RECORDING DEBUG]\n${debugLogs.join('\n')}` : '');
+
         const { error } = await supabase
           .from('call_logs')
           .insert({
@@ -1813,7 +1827,7 @@ wss.on('connection', async (ws, request) => {
             to_phone_number: logToPhone,
             duration_seconds: callDuration,
             status: 'completed',
-            transcript: transcriptString,
+            transcript: finalTranscript,
             cost: finalCost,
             call_sid: callSid || null,
             recording_url: finalRecordingUrl
