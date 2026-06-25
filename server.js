@@ -1051,18 +1051,18 @@ app.post('/api/campaigns/pause', async (req, res) => {
   }
 });
 
-// Trigger direct call endpoint (useful for n8n flow integrations)
 app.post('/api/calls/trigger', async (req, res) => {
-  const { phone_number, name, agentId, context } = req.body;
+  const { phone_number, name, agentId, contactId, context } = req.body;
   if (!phone_number) {
     return res.status(400).json({ error: 'Missing phone_number in request body' });
   }
   
   const targetAgentId = agentId || 'default';
-  console.log(`[Trigger Call API] Received request to dial ${phone_number} (Name: ${name || 'N/A'}) for agent: ${targetAgentId}`);
+  console.log(`[Trigger Call API] Received request to dial ${phone_number} (Name: ${name || 'N/A'}, contactId: ${contactId || 'N/A'}) for agent: ${targetAgentId}`);
 
   try {
     const contact = {
+      id: contactId || undefined,
       phone_number: phone_number,
       name: name || 'Direct Call Lead'
     };
