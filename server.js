@@ -945,6 +945,31 @@ app.post('/api/campaigns/start', async (req, res) => {
   }
 
   try {
+    // Fetch campaign to get organization_id
+    const { data: fetchCampaign, error: fetchErr } = await supabase
+      .from('campaigns')
+      .select('organization_id')
+      .eq('id', campaignId)
+      .maybeSingle();
+
+    if (fetchErr || !fetchCampaign) {
+      return res.status(404).send('Campaign not found');
+    }
+
+    // Verify wallet balance
+    const { data: orgData, error: orgErr } = await supabase
+      .from('organizations')
+      .select('wallet_balance')
+      .eq('id', fetchCampaign.organization_id)
+      .maybeSingle();
+
+    if (!orgErr && orgData && orgData.wallet_balance !== undefined && orgData.wallet_balance !== null) {
+      const balance = Number(orgData.wallet_balance) || 0;
+      if (balance <= 0) {
+        return res.status(400).send('Insufficient wallet balance. Please recharge your wallet.');
+      }
+    }
+
     const { data: campaign, error } = await supabase
       .from('campaigns')
       .update({ status: 'running' })
@@ -953,7 +978,7 @@ app.post('/api/campaigns/start', async (req, res) => {
       .single();
 
     if (error || !campaign) {
-      return res.status(404).json({ error: 'Campaign not found or failed to update' });
+      return res.status(404).send('Campaign not found or failed to update');
     }
 
     runCampaignQueue(campaignId);
@@ -961,7 +986,7 @@ app.post('/api/campaigns/start', async (req, res) => {
     return res.json({ success: true, campaign });
   } catch (err) {
     console.error('[Campaign API] Error starting campaign:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).send(err.message);
   }
 });
 
