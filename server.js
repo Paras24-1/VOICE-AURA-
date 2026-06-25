@@ -212,25 +212,51 @@ CONVERSATION FLOW:`;
 async function initiateVobizCall(contact, agentId) {
   const authId = process.env.VOBIZ_AUTH_ID;
   const authToken = process.env.VOBIZ_AUTH_TOKEN;
-
-
   let callerId = process.env.VOBIZ_CALLER_ID;
+  let resolvedOrgId = null;
 
-  // Fetch agent's custom telephone number from database to act as the dynamic callerId
+  // Fetch agent configuration and organization ID
   if (supabase && agentId && agentId !== 'default' && agentId !== 'new') {
     try {
       const { data, error } = await supabase
         .from('agents')
-        .select('telephone_number')
+        .select('telephone_number, organization_id')
         .eq('id', agentId)
-        .single();
+        .maybeSingle();
         
-      if (data && data.telephone_number) {
-        callerId = data.telephone_number;
-        console.log(`[Vobiz] Using agent-specific caller ID: ${callerId} for agent ${agentId}`);
+      if (data) {
+        if (data.telephone_number) {
+          callerId = data.telephone_number;
+          console.log(`[Vobiz] Using agent-specific caller ID: ${callerId} for agent ${agentId}`);
+        }
+        resolvedOrgId = data.organization_id;
       }
     } catch (dbErr) {
-      console.error('[Vobiz] Error fetching agent caller ID from Supabase:', dbErr);
+      console.error('[Vobiz] Error fetching agent config from Supabase:', dbErr);
+    }
+  }
+
+  // Verify wallet balance if organization is resolved
+  if (supabase && resolvedOrgId) {
+    try {
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('wallet_balance')
+        .eq('id', resolvedOrgId)
+        .maybeSingle();
+
+      if (orgData && orgData.wallet_balance !== undefined && orgData.wallet_balance !== null) {
+        const balance = Number(orgData.wallet_balance) || 0;
+        if (balance <= 0) {
+          console.warn(`[Vobiz Call Blocked] Insufficient wallet balance (₹${balance}) for Org ${resolvedOrgId}`);
+          throw new Error('Insufficient wallet balance');
+        }
+      }
+    } catch (balanceErr) {
+      console.error('[Vobiz Call Check] Wallet verification error:', balanceErr.message);
+      if (balanceErr.message === 'Insufficient wallet balance') {
+        throw balanceErr;
+      }
     }
   }
 
@@ -392,33 +418,39 @@ async function runCampaignQueue(campaignId) {
               })
               .eq('id', contact.id);
 
-            // Fetch previous calls for billing calculations
-            let prevTotalSeconds = 0;
-            const { data: previousCalls, error: prevErr } = await supabase
-              .from('call_logs')
-              .select('duration_seconds')
-              .eq('organization_id', campaign.organization_id);
-              
-            if (!prevErr && previousCalls) {
-              prevTotalSeconds = previousCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+            // Fetch current wallet balance
+            let currentWalletBalance = 0;
+            const { data: orgData, error: orgErr } = await supabase
+              .from('organizations')
+              .select('wallet_balance')
+              .eq('id', campaign.organization_id)
+              .maybeSingle();
+            
+            if (!orgErr && orgData) {
+              currentWalletBalance = Number(orgData.wallet_balance) || 0;
+            } else if (orgErr) {
+              console.error('[Supabase Campaign Mock] Error fetching wallet balance:', orgErr.message);
             }
 
-            const FREE_SECONDS_LIMIT = 600 * 60; // 600 minutes
             const RATE_PER_MINUTE = 3.5; // ₹3.5/min
             const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
-            
-            let calculatedCost = 0;
-            const newTotalSeconds = prevTotalSeconds + mockDuration;
-            
-            if (prevTotalSeconds >= FREE_SECONDS_LIMIT) {
-              calculatedCost = mockDuration * RATE_PER_SECOND;
-            } else if (newTotalSeconds > FREE_SECONDS_LIMIT) {
-              const billableSeconds = newTotalSeconds - FREE_SECONDS_LIMIT;
-              calculatedCost = billableSeconds * RATE_PER_SECOND;
-            } else {
-              calculatedCost = 0;
-            }
+            const calculatedCost = mockDuration * RATE_PER_SECOND;
             const finalCost = Number(calculatedCost.toFixed(4));
+
+            // Deduct balance
+            const newBalance = Math.max(0, Number((currentWalletBalance - finalCost).toFixed(4)));
+
+            // Update wallet balance in organizations table
+            const { error: balanceUpdateErr } = await supabase
+              .from('organizations')
+              .update({ wallet_balance: newBalance })
+              .eq('id', campaign.organization_id);
+
+            if (balanceUpdateErr) {
+              console.error('[Supabase Campaign Mock] Error updating wallet balance:', balanceUpdateErr.message);
+            } else {
+              console.log(`[Supabase Campaign Mock] Deducted ₹${finalCost} from Org ${campaign.organization_id}. Old Balance: ₹${currentWalletBalance}, New Balance: ₹${newBalance}`);
+            }
 
             await supabase
               .from('call_logs')
@@ -507,6 +539,46 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   console.log(`[Vobiz] Incoming call received, routing to agent: ${agentId}, CallUUID: ${callUuid}, From: ${fromNumber || '(no phone captured)'}`);
   console.log(`[Vobiz] Incoming webhook body fields:`, JSON.stringify(req.body));
 
+  // Verify wallet balance
+  let hasBalance = true;
+  let balance = 0;
+  if (supabase && agentId && agentId !== 'default' && agentId !== 'new') {
+    try {
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('organization_id')
+        .eq('id', agentId)
+        .maybeSingle();
+
+      if (agent && agent.organization_id) {
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('wallet_balance')
+          .eq('id', agent.organization_id)
+          .maybeSingle();
+
+        if (org && org.wallet_balance !== undefined && org.wallet_balance !== null) {
+          balance = Number(org.wallet_balance) || 0;
+          if (balance <= 0) {
+            hasBalance = false;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Vobiz Inbound Balance Check] Error:', err);
+    }
+  }
+
+  if (!hasBalance) {
+    console.log(`[Vobiz Inbound] Blocking inbound call for agent ${agentId}. Insufficient balance: ₹${balance}`);
+    res.type('text/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Speak voice="WOMAN" language="en-US">Sorry, the account has insufficient balance to complete this call. Please recharge your wallet.</Speak>
+  <Hangup />
+</Response>`);
+    return;
+  }
   
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
@@ -532,6 +604,47 @@ app.post([
 ], async (req, res) => {
   const agentId = req.params.agentId || req.query.agentId || '';
   const contactId = req.params.contactId || req.query.contactId || '';
+
+  // Verify wallet balance
+  let hasBalance = true;
+  let balance = 0;
+  if (supabase && agentId && agentId !== 'default' && agentId !== 'new') {
+    try {
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('organization_id')
+        .eq('id', agentId)
+        .maybeSingle();
+
+      if (agent && agent.organization_id) {
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('wallet_balance')
+          .eq('id', agent.organization_id)
+          .maybeSingle();
+
+        if (org && org.wallet_balance !== undefined && org.wallet_balance !== null) {
+          balance = Number(org.wallet_balance) || 0;
+          if (balance <= 0) {
+            hasBalance = false;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Vobiz Outbound Answer Balance Check] Error:', err);
+    }
+  }
+
+  if (!hasBalance) {
+    console.log(`[Vobiz Outbound Answer] Blocking call bridge for agent ${agentId}. Insufficient balance: ₹${balance}`);
+    res.type('text/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Speak voice="WOMAN" language="en-US">Sorry, the account has insufficient balance to complete this call. Please recharge your wallet.</Speak>
+  <Hangup />
+</Response>`);
+    return;
+  }
   
   // Resolve customer phone dynamically from path params, query params, or webhook body
   let customerPhone = req.params.customerPhone || req.query.customerPhone || req.body.To || req.body.to || req.query.To || req.query.to || '';
@@ -672,37 +785,44 @@ app.all('/api/vobiz/events', async (req, res) => {
 
         // Only update if the new calculated duration is greater than what is currently in the DB
         if (newDuration > 0 && newDuration > (callLog.duration_seconds || 0)) {
-          // Fetch previous call logs to recalculate the cost accurately
-          let prevTotalSeconds = 0;
-          const { data: previousCalls, error: prevErr } = await supabase
-            .from('call_logs')
-            .select('duration_seconds')
-            .eq('organization_id', callLog.organization_id)
-            .neq('id', callLog.id); // exclude the current call log
-            
-          if (!prevErr && previousCalls) {
-            prevTotalSeconds = previousCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
-          }
-
-          const FREE_SECONDS_LIMIT = 600 * 60; // 600 minutes
           const RATE_PER_MINUTE = 3.5; // ₹3.5/min
           const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
-          
-          let calculatedCost = 0;
-          const newTotalSeconds = prevTotalSeconds + newDuration;
-          
-          if (prevTotalSeconds >= FREE_SECONDS_LIMIT) {
-            calculatedCost = newDuration * RATE_PER_SECOND;
-          } else if (newTotalSeconds > FREE_SECONDS_LIMIT) {
-            const billableSeconds = newTotalSeconds - FREE_SECONDS_LIMIT;
-            calculatedCost = billableSeconds * RATE_PER_SECOND;
-          } else {
-            calculatedCost = 0;
-          }
-          
+          const calculatedCost = newDuration * RATE_PER_SECOND;
           const finalCost = Number(calculatedCost.toFixed(4));
+          
+          const additionalCost = Number((finalCost - (callLog.cost || 0)).toFixed(4));
 
-          console.log(`[Vobiz Event] Updating call log ${callLog.id}: New Duration: ${newDuration}s (Padded/Bridged), New Cost: ₹ ${finalCost}`);
+          console.log(`[Vobiz Event] Updating call log ${callLog.id}: New Duration: ${newDuration}s (Padded/Bridged), New Cost: ₹ ${finalCost}, Additional Cost: ₹${additionalCost}`);
+
+          // Fetch current wallet balance
+          let currentWalletBalance = 0;
+          const { data: orgData, error: orgErr } = await supabase
+            .from('organizations')
+            .select('wallet_balance')
+            .eq('id', callLog.organization_id)
+            .maybeSingle();
+          
+          if (!orgErr && orgData) {
+            currentWalletBalance = Number(orgData.wallet_balance) || 0;
+          } else if (orgErr) {
+            console.error('[Supabase Event Hook] Error fetching wallet balance:', orgErr.message);
+          }
+
+          // Deduct additional cost if any
+          if (additionalCost > 0) {
+            const newBalance = Math.max(0, Number((currentWalletBalance - additionalCost).toFixed(4)));
+            
+            const { error: balanceUpdateErr } = await supabase
+              .from('organizations')
+              .update({ wallet_balance: newBalance })
+              .eq('id', callLog.organization_id);
+
+            if (balanceUpdateErr) {
+              console.error('[Supabase Event Hook] Error updating wallet balance:', balanceUpdateErr.message);
+            } else {
+              console.log(`[Supabase Event Hook] Deducted additional ₹${additionalCost} from Org ${callLog.organization_id}. Old Balance: ₹${currentWalletBalance}, New Balance: ₹${newBalance}`);
+            }
+          }
 
           const { error: updateErr } = await supabase
             .from('call_logs')
@@ -1515,37 +1635,39 @@ wss.on('connection', async (ws, request) => {
           fromPhone = pathname.startsWith('/vobiz-stream') ? 'Vobiz Outbound' : 'WebRTC Outbound Simulator';
         }
 
-        // Fetch previous call records to compute dynamic billing cost
-        let prevTotalSeconds = 0;
-        const { data: previousCalls, error: prevErr } = await supabase
-          .from('call_logs')
-          .select('duration_seconds')
-          .eq('organization_id', agentConfig.organization_id);
-          
-        if (!prevErr && previousCalls) {
-          prevTotalSeconds = previousCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
-        } else if (prevErr) {
-          console.error('[Supabase] Error fetching previous call logs for billing:', prevErr.message);
+        // Retrieve current wallet balance
+        let currentWalletBalance = 0;
+        const { data: orgData, error: orgErr } = await supabase
+          .from('organizations')
+          .select('wallet_balance')
+          .eq('id', agentConfig.organization_id)
+          .maybeSingle();
+        
+        if (!orgErr && orgData) {
+          currentWalletBalance = Number(orgData.wallet_balance) || 0;
+        } else if (orgErr) {
+          console.error('[Supabase] Error fetching wallet balance for deduction:', orgErr.message);
         }
 
-        const FREE_SECONDS_LIMIT = 600 * 60; // 36,000 seconds (600 minutes)
         const RATE_PER_MINUTE = 3.5; // ₹3.5/min
         const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
-        
-        let calculatedCost = 0;
-        const newTotalSeconds = prevTotalSeconds + callDuration;
-        
-        if (prevTotalSeconds >= FREE_SECONDS_LIMIT) {
-          calculatedCost = callDuration * RATE_PER_SECOND;
-        } else if (newTotalSeconds > FREE_SECONDS_LIMIT) {
-          const billableSeconds = newTotalSeconds - FREE_SECONDS_LIMIT;
-          calculatedCost = billableSeconds * RATE_PER_SECOND;
-        } else {
-          calculatedCost = 0;
-        }
-        
+        const calculatedCost = callDuration * RATE_PER_SECOND;
         const finalCost = Number(calculatedCost.toFixed(4));
-        console.log(`[Billing] Org: ${agentConfig.organization_id}. Prev duration: ${prevTotalSeconds}s. Call duration: ${callDuration}s. New total: ${newTotalSeconds}s. Calculated Cost: ₹ ${finalCost}`);
+        
+        // Deduct balance
+        const newBalance = Math.max(0, Number((currentWalletBalance - finalCost).toFixed(4)));
+        
+        // Update wallet balance in organizations table
+        const { error: balanceUpdateErr } = await supabase
+          .from('organizations')
+          .update({ wallet_balance: newBalance })
+          .eq('id', agentConfig.organization_id);
+
+        if (balanceUpdateErr) {
+          console.error('[Supabase] Error updating wallet balance:', balanceUpdateErr.message);
+        } else {
+          console.log(`[Supabase] Deducted ₹${finalCost} from Org ${agentConfig.organization_id}. Old Balance: ₹${currentWalletBalance}, New Balance: ₹${newBalance}`);
+        }
 
         let logFromPhone = fromPhone;
         let logToPhone = agentConfig.name;
