@@ -44,6 +44,7 @@ export default function DashboardLayout({
   const [searchQuery, setSearchQuery] = useState("");
   const [notifications, setNotifications] = useState(3);
   const [userProfile, setUserProfile] = useState<{ email: string; fullName: string; initials: string } | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   // Fetch authenticated user profile details dynamically
   useEffect(() => {
@@ -67,6 +68,30 @@ export default function DashboardLayout({
             .substring(0, 2) || "U";
 
           setUserProfile({ email, fullName, initials });
+
+          // Fetch organization wallet balance
+          const { data: memberData } = await supabase
+            .from("organization_members")
+            .select("organization_id")
+            .eq("profile_id", user.id)
+            .limit(1)
+            .maybeSingle();
+
+          if (memberData?.organization_id) {
+            const { data: orgData } = await supabase
+              .from("organizations")
+              .select("wallet_balance")
+              .eq("id", memberData.organization_id)
+              .maybeSingle();
+
+            if (orgData) {
+              setWalletBalance(Number(orgData.wallet_balance) || 0);
+            } else {
+              setWalletBalance(0);
+            }
+          } else {
+            setWalletBalance(0);
+          }
         } else {
           router.push("/login");
         }
@@ -323,7 +348,17 @@ export default function DashboardLayout({
 
           {/* Top Actions Profile */}
           <div className="flex items-center gap-4">
-
+            {walletBalance !== null && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/85 text-zinc-300 shadow-sm mr-1">
+                <div className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${walletBalance > 0 ? "bg-emerald-400" : "bg-rose-400"}`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${walletBalance > 0 ? "bg-emerald-500" : "bg-rose-500"}`}></span>
+                </div>
+                <span className="text-xs font-mono font-bold">
+                  Wallet: ₹{walletBalance.toFixed(2)}
+                </span>
+              </div>
+            )}
 
             {/* Notification Hub */}
             <button className="relative p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-zinc-400 hover:text-zinc-200 transition-colors">
