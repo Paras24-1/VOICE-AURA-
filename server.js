@@ -220,14 +220,15 @@ function addCallDebugLog(callUuid, msg) {
 }
 
 // Programmatic call recording trigger via Vobiz API
-async function startVobizRecording(callUuid) {
+async function startVobizRecording(callUuid, reqHost) {
   const authId = process.env.VOBIZ_AUTH_ID;
   const authToken = process.env.VOBIZ_AUTH_TOKEN;
   addCallDebugLog(callUuid, `startVobizRecording invoked. authId exists: ${!!authId}, authToken exists: ${!!authToken}`);
   if (!authId || !authToken || !callUuid) return;
 
-  const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
-  const callbackUrl = `${host}/api/vobiz/events`;
+  const resolvedHost = reqHost || process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
+  const protocol = resolvedHost.startsWith('localhost') || resolvedHost.startsWith('127.0.0.1') ? 'http' : 'https';
+  const callbackUrl = resolvedHost.startsWith('http') ? `${resolvedHost}/api/vobiz/events` : `${protocol}://${resolvedHost}/api/vobiz/events`;
 
   const url = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
   addCallDebugLog(callUuid, `Requesting Vobiz API: POST ${url} with callback: ${callbackUrl}`);
@@ -632,7 +633,7 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
 
   if (callUuid) {
-    startVobizRecording(callUuid);
+    startVobizRecording(callUuid, host);
   }
 
   res.type('text/xml');
@@ -741,7 +742,7 @@ app.post([
   }
 
   if (callUuid) {
-    startVobizRecording(callUuid);
+    startVobizRecording(callUuid, host);
   }
 
   res.type('text/xml');
