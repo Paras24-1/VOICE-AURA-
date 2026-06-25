@@ -27,6 +27,7 @@ interface CallLog {
   cost: number;
   created_at: string;
   transcript: string | null;
+  recording_url?: string | null;
 }
 
 export default function CallLogsPage() {
@@ -255,6 +256,20 @@ export default function CallLogsPage() {
                     <span className="font-semibold text-zinc-300 block mt-0.5 truncate">{selectedCall.from_phone_number || "WebRTC Client"}</span>
                   </div>
                 </div>
+
+                {/* Call Recording Playback */}
+                {selectedCall.recording_url && (
+                  <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-900/60 space-y-1.5">
+                    <span className="text-[9px] font-mono text-zinc-500 uppercase block tracking-wider">
+                      Call Recording Playback
+                    </span>
+                    <audio
+                      src={selectedCall.recording_url}
+                      controls
+                      className="w-full h-8 rounded-lg outline-none bg-transparent"
+                    />
+                  </div>
+                )}
 
                 {/* Transcript Bubbles */}
                 <div className="space-y-3 pt-2">

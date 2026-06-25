@@ -772,64 +772,76 @@ app.all('/api/vobiz/events', async (req, res) => {
           .update({ transcript: debugText })
           .eq('id', callLog.id);
 
+        const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || req.query.RecordUrl || req.query.RecordURL || '';
+
+        // If we have new duration details, update them
+        let hasNewDuration = false;
         let newDuration = 0;
-        
         if (isDialEnded) {
-          // If we have a dialed human agent call duration, add it to the existing AI duration
-          // (the existing duration already has the 5s padding from close handler)
           newDuration = (callLog.duration_seconds || 0) + dialDuration;
-        } else {
-          // If we have total call duration from Vobiz, use it (and add 5 seconds padding)
+        } else if (finalDuration > 0) {
           newDuration = finalDuration + 5;
         }
 
-        // Only update if the new calculated duration is greater than what is currently in the DB
         if (newDuration > 0 && newDuration > (callLog.duration_seconds || 0)) {
-          const RATE_PER_MINUTE = 3.5; // ₹3.5/min
-          const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
-          const calculatedCost = newDuration * RATE_PER_SECOND;
-          const finalCost = Number(calculatedCost.toFixed(4));
-          
-          const additionalCost = Number((finalCost - (callLog.cost || 0)).toFixed(4));
+          hasNewDuration = true;
+        }
 
-          console.log(`[Vobiz Event] Updating call log ${callLog.id}: New Duration: ${newDuration}s (Padded/Bridged), New Cost: ₹ ${finalCost}, Additional Cost: ₹${additionalCost}`);
-
-          // Fetch current wallet balance
-          let currentWalletBalance = 0;
-          const { data: orgData, error: orgErr } = await supabase
-            .from('organizations')
-            .select('wallet_balance')
-            .eq('id', callLog.organization_id)
-            .maybeSingle();
-          
-          if (!orgErr && orgData) {
-            currentWalletBalance = Number(orgData.wallet_balance) || 0;
-          } else if (orgErr) {
-            console.error('[Supabase Event Hook] Error fetching wallet balance:', orgErr.message);
+        if (hasNewDuration || recordingUrl) {
+          const updatePayload = {};
+          if (recordingUrl) {
+            updatePayload.recording_url = recordingUrl;
+            console.log(`[Vobiz Event] Found recording URL for call ${callLog.id}: ${recordingUrl}`);
           }
 
-          // Deduct additional cost if any
-          if (additionalCost > 0) {
-            const newBalance = Math.max(0, Number((currentWalletBalance - additionalCost).toFixed(4)));
+          if (hasNewDuration) {
+            const RATE_PER_MINUTE = 3.5; // ₹3.5/min
+            const RATE_PER_SECOND = RATE_PER_MINUTE / 60;
+            const calculatedCost = newDuration * RATE_PER_SECOND;
+            const finalCost = Number(calculatedCost.toFixed(4));
             
-            const { error: balanceUpdateErr } = await supabase
-              .from('organizations')
-              .update({ wallet_balance: newBalance })
-              .eq('id', callLog.organization_id);
+            const additionalCost = Number((finalCost - (callLog.cost || 0)).toFixed(4));
 
-            if (balanceUpdateErr) {
-              console.error('[Supabase Event Hook] Error updating wallet balance:', balanceUpdateErr.message);
-            } else {
-              console.log(`[Supabase Event Hook] Deducted additional ₹${additionalCost} from Org ${callLog.organization_id}. Old Balance: ₹${currentWalletBalance}, New Balance: ₹${newBalance}`);
+            console.log(`[Vobiz Event] Updating call log ${callLog.id}: New Duration: ${newDuration}s (Padded/Bridged), New Cost: ₹ ${finalCost}, Additional Cost: ₹${additionalCost}`);
+
+            // Fetch current wallet balance
+            let currentWalletBalance = 0;
+            const { data: orgData, error: orgErr } = await supabase
+              .from('organizations')
+              .select('wallet_balance')
+              .eq('id', callLog.organization_id)
+              .maybeSingle();
+            
+            if (!orgErr && orgData) {
+              currentWalletBalance = Number(orgData.wallet_balance) || 0;
+            } else if (orgErr) {
+              console.error('[Supabase Event Hook] Error fetching wallet balance:', orgErr.message);
             }
+
+            // Deduct additional cost if any
+            if (additionalCost > 0) {
+              const newBalance = Math.max(0, Number((currentWalletBalance - additionalCost).toFixed(4)));
+              
+              const { error: balanceUpdateErr } = await supabase
+                .from('organizations')
+                .update({ wallet_balance: newBalance })
+                .eq('id', callLog.organization_id);
+
+              if (balanceUpdateErr) {
+                console.error('[Supabase Event Hook] Error updating wallet balance:', balanceUpdateErr.message);
+              } else {
+                console.log(`[Supabase Event Hook] Deducted additional ₹${additionalCost} from Org ${callLog.organization_id}. Old Balance: ₹${currentWalletBalance}, New Balance: ₹${newBalance}`);
+              }
+            }
+
+            updatePayload.duration_seconds = newDuration;
+            updatePayload.cost = finalCost;
           }
 
+          console.log(`[Vobiz Event] Updating call log ${callLog.id} with payload:`, JSON.stringify(updatePayload));
           const { error: updateErr } = await supabase
             .from('call_logs')
-            .update({
-              duration_seconds: newDuration,
-              cost: finalCost
-            })
+            .update(updatePayload)
             .eq('id', callLog.id);
 
           if (updateErr) {
@@ -838,7 +850,7 @@ app.all('/api/vobiz/events', async (req, res) => {
             console.log(`[Vobiz Event] Call log ${callLog.id} updated successfully.`);
           }
         } else {
-          console.log(`[Vobiz Event] Skipped update: newDuration (${newDuration}s) is not greater than existing duration_seconds (${callLog.duration_seconds || 0}s)`);
+          console.log(`[Vobiz Event] Skipped update: newDuration (${newDuration}s) is not greater than existing duration_seconds (${callLog.duration_seconds || 0}s) and no recording URL was found.`);
         }
       } else {
         console.log(`[Vobiz Event] No call log found in DB with call_sid=${callUuid}. Checking if call was missed/failed.`);
