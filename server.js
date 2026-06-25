@@ -34,6 +34,7 @@ if (supabaseUrl && supabaseServiceKey) {
 const activeCampaigns = new Map();
 const activeCallContexts = new Map(); // Map to store call-specific lead context (e.g. from n8n)
 const activeCallContextsByPhone = new Map(); // Map to resolve context via customer phone number fallback
+const pendingCallRecordings = new Map(); // Map to cache recording URLs to resolve race condition
 
 // Helper to format target transfer numbers to E.164 format
 function formatTransferNumber(number, defaultCallerId = '') {
@@ -205,6 +206,37 @@ CONVERSATION FLOW:`;
     processedPrompt = processedPrompt.replace(/\{\{\s*budget\s*\}\}/gi, 'बजट');
     processedPrompt = processedPrompt.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, '');
     return processedPrompt;
+  }
+}
+
+// Programmatic call recording trigger via Vobiz API
+async function startVobizRecording(callUuid) {
+  const authId = process.env.VOBIZ_AUTH_ID;
+  const authToken = process.env.VOBIZ_AUTH_TOKEN;
+  if (!authId || !authToken || !callUuid) return;
+
+  const url = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
+  console.log(`[Vobiz Recording] Requesting to start recording for CallUUID: ${callUuid}`);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth-ID': authId,
+        'X-Auth-Token': authToken
+      },
+      body: JSON.stringify({
+        file_format: 'mp3'
+      })
+    });
+    if (!response.ok) {
+      const txt = await response.text();
+      console.error(`[Vobiz Recording] Failed to start recording: ${response.status} - ${txt}`);
+    } else {
+      console.log(`[Vobiz Recording] Programmatic recording started successfully for CallUUID: ${callUuid}`);
+    }
+  } catch (err) {
+    console.error(`[Vobiz Recording] Error starting recording:`, err.message);
   }
 }
 
@@ -582,7 +614,11 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
-  
+
+  if (callUuid) {
+    startVobizRecording(callUuid);
+  }
+
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -688,6 +724,10 @@ app.post([
     streamUrl += `&amp;context=${encodeURIComponent(JSON.stringify(contextData))}`;
   }
 
+  if (callUuid) {
+    startVobizRecording(callUuid);
+  }
+
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -753,6 +793,12 @@ app.all('/api/vobiz/events', async (req, res) => {
   // If a call event is received, find and update/log the call log
   if (supabase && callUuid) {
     try {
+      const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || req.query.RecordUrl || req.query.RecordURL || '';
+      if (recordingUrl) {
+        pendingCallRecordings.set(callUuid, recordingUrl);
+        console.log(`[Vobiz Event] Cached pending recording URL for CallUUID ${callUuid}: ${recordingUrl}`);
+      }
+
       console.log(`[Vobiz Event] Processing event for CallUUID ${callUuid}. Vobiz Total Duration: ${finalDuration}s, Dial (Human) Duration: ${dialDuration}s, isDialEnded: ${isDialEnded}`);
       
       // Fetch the call log matching call_sid
@@ -1744,6 +1790,12 @@ wss.on('connection', async (ws, request) => {
           logToPhone = customerPhone || 'Vobiz Outbound';
         }
 
+        const finalRecordingUrl = callSid ? (pendingCallRecordings.get(callSid) || null) : null;
+        if (finalRecordingUrl && callSid) {
+          console.log(`[Supabase] Found pending recording URL for callSid ${callSid}: ${finalRecordingUrl}`);
+          pendingCallRecordings.delete(callSid);
+        }
+
         const { error } = await supabase
           .from('call_logs')
           .insert({
@@ -1755,7 +1807,8 @@ wss.on('connection', async (ws, request) => {
             status: 'completed',
             transcript: transcriptString,
             cost: finalCost,
-            call_sid: callSid || null
+            call_sid: callSid || null,
+            recording_url: finalRecordingUrl
           });
           
         if (error) {
