@@ -981,7 +981,36 @@ app.post('/api/campaigns/start', async (req, res) => {
       return res.status(404).send('Campaign not found or failed to update');
     }
 
-    runCampaignQueue(campaignId);
+    // If n8n webhook URL is set, trigger n8n and do not run internal queue
+    const n8nVoiceCampaignUrl = process.env.N8N_VOICE_CAMPAIGN_WEBHOOK_URL;
+    if (n8nVoiceCampaignUrl) {
+      // Fetch all pending contacts for this campaign
+      const { data: pendingContacts, error: contactsErr } = await supabase
+        .from('campaign_contacts')
+        .select('*')
+        .eq('campaign_id', campaignId)
+        .eq('status', 'pending');
+
+      if (!contactsErr && pendingContacts && pendingContacts.length > 0) {
+        console.log(`[Campaign API] Triggering n8n voice campaign webhook for campaign ${campaignId} with ${pendingContacts.length} contacts...`);
+        // Trigger n8n webhook asynchronously
+        fetch(n8nVoiceCampaignUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            campaign_id: campaignId,
+            agent_id: campaign.agent_id,
+            contacts: pendingContacts.map(c => ({
+              id: c.id,
+              name: c.name,
+              phone_number: c.phone_number
+            }))
+          })
+        }).catch(err => console.error('[Campaign API] Error triggering n8n webhook:', err.message));
+      }
+    } else {
+      runCampaignQueue(campaignId);
+    }
 
     return res.json({ success: true, campaign });
   } catch (err) {
