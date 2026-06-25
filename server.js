@@ -215,8 +215,11 @@ async function startVobizRecording(callUuid) {
   const authToken = process.env.VOBIZ_AUTH_TOKEN;
   if (!authId || !authToken || !callUuid) return;
 
+  const host = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
+  const callbackUrl = `${host}/api/vobiz/events`;
+
   const url = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
-  console.log(`[Vobiz Recording] Requesting to start recording for CallUUID: ${callUuid}`);
+  console.log(`[Vobiz Recording] Requesting to start recording for CallUUID: ${callUuid}, Callback: ${callbackUrl}`);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -226,7 +229,12 @@ async function startVobizRecording(callUuid) {
         'X-Auth-Token': authToken
       },
       body: JSON.stringify({
-        file_format: 'mp3'
+        file_format: 'mp3',
+        callback_url: callbackUrl,
+        callbackUrl: callbackUrl,
+        action: callbackUrl,
+        callback_method: 'POST',
+        callbackMethod: 'POST'
       })
     });
     if (!response.ok) {
