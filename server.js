@@ -553,8 +553,36 @@ async function runCampaignQueue(campaignId) {
   }
 }
 
+// Webhook request tracker for debugging
+const globalWebhookTracker = [];
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/vobiz/')) {
+    globalWebhookTracker.push({
+      timestamp: new Date().toISOString(),
+      path: req.path,
+      method: req.method,
+      query: req.query,
+      body: req.body,
+      headers: {
+        'host': req.headers.host,
+        'content-type': req.headers['content-type']
+      }
+    });
+    if (globalWebhookTracker.length > 100) {
+      globalWebhookTracker.shift();
+    }
+  }
+  next();
+});
+
+// Endpoint to view tracked webhooks
+app.get('/api/debug/webhooks', (req, res) => {
+  res.json(globalWebhookTracker);
+});
 
 // TwiML Route for Twilio inbound calls
 app.post('/api/twilio/incoming', async (req, res) => {
@@ -801,7 +829,7 @@ app.all('/api/vobiz/events', async (req, res) => {
   
   console.log(`[Vobiz Event] Call event (${method}): contactId=${contactId}, event=${event}, status=${status}, query:`, JSON.stringify(req.query), `body:`, JSON.stringify(req.body));
 
-  const callUuid = params.CallUUID || params.call_uuid || params.CallSid || params.call_sid || req.query.CallUUID || req.query.call_uuid || req.query.CallSid || req.query.call_sid || '';
+  const callUuid = params.CallUUID || params.call_uuid || params.calluuid || params.CallSid || params.call_sid || params.callsid || req.query.CallUUID || req.query.call_uuid || req.query.calluuid || req.query.CallSid || req.query.call_sid || '';
   const finalDuration = Number(params.Duration || params.duration || params.Billsec || params.billsec || params.BillDuration || params.bill_duration || req.query.Duration || req.query.duration || req.query.Billsec || req.query.billsec || req.query.BillDuration || req.query.bill_duration || 0);
   const dialDuration = Number(params.DialCallDuration || params.dial_call_duration || req.query.DialCallDuration || req.query.dial_call_duration || 0);
 
@@ -810,7 +838,7 @@ app.all('/api/vobiz/events', async (req, res) => {
   // If a call event is received, find and update/log the call log
   if (supabase && callUuid) {
     try {
-      const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || req.query.RecordUrl || req.query.RecordURL || '';
+      const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || params.RecordingUrl || params.RecordingURL || params.recordingUrl || req.query.RecordUrl || req.query.RecordURL || req.query.RecordingUrl || req.query.RecordingURL || req.query.recordingUrl || '';
       if (recordingUrl) {
         pendingCallRecordings.set(callUuid, recordingUrl);
         console.log(`[Vobiz Event] Cached pending recording URL for CallUUID ${callUuid}: ${recordingUrl}`);
@@ -835,7 +863,7 @@ app.all('/api/vobiz/events', async (req, res) => {
           .update({ transcript: debugText })
           .eq('id', callLog.id);
 
-        const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || req.query.RecordUrl || req.query.RecordURL || '';
+        const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || params.RecordingUrl || params.RecordingURL || params.recordingUrl || req.query.RecordUrl || req.query.RecordURL || req.query.RecordingUrl || req.query.RecordingURL || req.query.recordingUrl || '';
 
         // If we have new duration details, update them
         let hasNewDuration = false;
