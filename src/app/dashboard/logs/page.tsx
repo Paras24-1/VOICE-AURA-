@@ -264,7 +264,7 @@ export default function CallLogsPage() {
                       Call Recording Playback
                     </span>
                     <audio
-                      src={`/api/recordings/proxy?url=${encodeURIComponent(selectedCall.recording_url)}`}
+                      src={`${(process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:5050").replace(/^ws(s)?:\/\//, 'http$1://')}/api/recordings/proxy?url=${encodeURIComponent(selectedCall.recording_url)}`}
                       controls
                       className="w-full h-8 rounded-lg outline-none bg-transparent"
                     />
