@@ -823,7 +823,19 @@ app.post('/api/vobiz/whisper', async (req, res) => {
 app.all('/api/vobiz/events', async (req, res) => {
   const { contactId } = req.query;
   const method = req.method;
-  const params = method === 'GET' ? req.query : req.body;
+  let params = method === 'GET' ? req.query : req.body;
+
+  // Vobiz Recording API callbacks wrap the JSON payload inside a string under the "response" key
+  if (params.response && typeof params.response === 'string') {
+    try {
+      const parsed = JSON.parse(params.response);
+      params = { ...params, ...parsed };
+      console.log(`[Vobiz Event] Parsed nested 'response' JSON:`, JSON.stringify(parsed));
+    } catch (e) {
+      console.error(`[Vobiz Event] Error parsing nested 'response' JSON:`, e.message);
+    }
+  }
+
   const event = params.event;
   const status = params.status || params.CallStatus || '';
   
@@ -838,7 +850,7 @@ app.all('/api/vobiz/events', async (req, res) => {
   // If a call event is received, find and update/log the call log
   if (supabase && callUuid) {
     try {
-      const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || params.RecordingUrl || params.RecordingURL || params.recordingUrl || req.query.RecordUrl || req.query.RecordURL || req.query.RecordingUrl || req.query.RecordingURL || req.query.recordingUrl || '';
+      const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || params.RecordingUrl || params.RecordingURL || params.recordingUrl || params.record_url || params.recordUrl || req.query.RecordUrl || req.query.RecordURL || req.query.RecordingUrl || req.query.RecordingURL || req.query.recordingUrl || req.query.record_url || req.query.recordUrl || '';
       if (recordingUrl) {
         pendingCallRecordings.set(callUuid, recordingUrl);
         console.log(`[Vobiz Event] Cached pending recording URL for CallUUID ${callUuid}: ${recordingUrl}`);
@@ -863,7 +875,7 @@ app.all('/api/vobiz/events', async (req, res) => {
           .update({ transcript: debugText })
           .eq('id', callLog.id);
 
-        const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || params.RecordingUrl || params.RecordingURL || params.recordingUrl || req.query.RecordUrl || req.query.RecordURL || req.query.RecordingUrl || req.query.RecordingURL || req.query.recordingUrl || '';
+        const recordingUrl = params.RecordUrl || params.RecordURL || params.recording_url || params.RecordingUrl || params.RecordingURL || params.recordingUrl || params.record_url || params.recordUrl || req.query.RecordUrl || req.query.RecordURL || req.query.RecordingUrl || req.query.RecordingURL || req.query.recordingUrl || req.query.record_url || req.query.recordUrl || '';
 
         // If we have new duration details, update them
         let hasNewDuration = false;
