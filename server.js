@@ -584,6 +584,75 @@ app.get('/api/debug/webhooks', (req, res) => {
   res.json(globalWebhookTracker);
 });
 
+// Proxy endpoint to stream Vobiz recordings with proper authorization headers
+app.get('/api/recordings/proxy', async (req, res) => {
+  const targetUrl = req.query.url;
+  if (!targetUrl) {
+    return res.status(400).send('Missing url parameter');
+  }
+
+  // Security: only allow proxying URLs from media.vobiz.ai or api.vobiz.ai domains
+  try {
+    const parsedUrl = new URL(targetUrl);
+    if (parsedUrl.hostname !== 'media.vobiz.ai' && parsedUrl.hostname !== 'api.vobiz.ai') {
+      return res.status(403).send('Forbidden target host');
+    }
+  } catch (err) {
+    return res.status(400).send('Invalid url parameter');
+  }
+
+  const authId = process.env.VOBIZ_AUTH_ID;
+  const authToken = process.env.VOBIZ_AUTH_TOKEN;
+
+  if (!authId || !authToken) {
+    return res.status(500).send('Missing Vobiz configuration on server');
+  }
+
+  try {
+    console.log(`[Recording Proxy] Fetching audio from: ${targetUrl}`);
+    const response = await fetch(targetUrl, {
+      headers: {
+        'X-Auth-ID': authId,
+        'X-Auth-Token': authToken
+      }
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[Recording Proxy] Error fetching audio from Vobiz: ${response.status} - ${errText}`);
+      return res.status(response.status).send(`Error from Vobiz: ${errText}`);
+    }
+
+    // Forward content headers
+    res.setHeader('Content-Type', response.headers.get('content-type') || 'audio/mpeg');
+    const contentLength = response.headers.get('content-length');
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    
+    const acceptRanges = response.headers.get('accept-ranges');
+    if (acceptRanges) {
+      res.setHeader('Accept-Ranges', acceptRanges);
+    }
+
+    // Pipe stream to express response
+    const body = response.body;
+    if (body) {
+      if (typeof body.pipe === 'function') {
+        body.pipe(res);
+      } else {
+        const { Readable } = require('stream');
+        Readable.fromWeb(body).pipe(res);
+      }
+    } else {
+      res.status(500).send('No body returned from Vobiz');
+    }
+  } catch (err) {
+    console.error(`[Recording Proxy] Request failed:`, err.message);
+    res.status(500).send(`Internal error: ${err.message}`);
+  }
+});
+
 // TwiML Route for Twilio inbound calls
 app.post('/api/twilio/incoming', async (req, res) => {
   const agentId = req.query.agentId || 'default';
