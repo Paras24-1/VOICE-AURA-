@@ -264,7 +264,7 @@ export default function CallLogsPage() {
                       Call Recording Playback
                     </span>
                     <audio
-                      src={`${(process.env.NEXT_PUBLIC_WS_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? "ws://localhost:5050" : "wss://voice-aura-production.up.railway.app")).replace(/^ws(s)?:\/\//, 'http$1://')}/api/recordings/proxy?url=${encodeURIComponent(selectedCall.recording_url)}`}
+                      src={`/api/recordings/proxy?url=${encodeURIComponent(selectedCall.recording_url)}`}
                       controls
                       className="w-full h-8 rounded-lg outline-none bg-transparent"
                     />
