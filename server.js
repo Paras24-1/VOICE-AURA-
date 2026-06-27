@@ -585,7 +585,17 @@ app.get('/api/debug/webhooks', (req, res) => {
 });
 
 // Proxy endpoint to stream Vobiz recordings with proper authorization headers
-app.get('/api/recordings/proxy', async (req, res) => {
+app.all('/api/recordings/proxy', async (req, res) => {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Range, X-Requested-With');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+
   const targetUrl = req.query.url;
   if (!targetUrl) {
     return res.status(400).send('Missing url parameter');
