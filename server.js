@@ -609,25 +609,41 @@ app.get('/api/recordings/proxy', async (req, res) => {
   }
 
   try {
-    console.log(`[Recording Proxy] Fetching audio from: ${targetUrl}`);
+    console.log(`[Recording Proxy] Fetching audio from: ${targetUrl}, Range requested: ${req.headers.range || 'none'}`);
+    const fetchHeaders = {
+      'X-Auth-ID': authId,
+      'X-Auth-Token': authToken
+    };
+    
+    // Forward Range header from client to support HTML5 seekers (critical for Safari/Chrome compatibility)
+    if (req.headers.range) {
+      fetchHeaders['Range'] = req.headers.range;
+    }
+
     const response = await fetch(targetUrl, {
-      headers: {
-        'X-Auth-ID': authId,
-        'X-Auth-Token': authToken
-      }
+      headers: fetchHeaders
     });
 
-    if (!response.ok) {
+    if (!response.ok && response.status !== 206) {
       const errText = await response.text();
       console.error(`[Recording Proxy] Error fetching audio from Vobiz: ${response.status} - ${errText}`);
       return res.status(response.status).send(`Error from Vobiz: ${errText}`);
     }
 
+    // Set matching status code (e.g. 200 OK or 206 Partial Content)
+    res.status(response.status);
+
     // Forward content headers
     res.setHeader('Content-Type', response.headers.get('content-type') || 'audio/mpeg');
+    
     const contentLength = response.headers.get('content-length');
     if (contentLength) {
       res.setHeader('Content-Length', contentLength);
+    }
+    
+    const contentRange = response.headers.get('content-range');
+    if (contentRange) {
+      res.setHeader('Content-Range', contentRange);
     }
     
     const acceptRanges = response.headers.get('accept-ranges');
