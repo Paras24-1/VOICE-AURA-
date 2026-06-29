@@ -690,7 +690,6 @@ app.post('/api/twilio/incoming', async (req, res) => {
   res.type('text/xml');
   res.send(`<?xml version="1.5" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice" language="en-US">Connecting you to Vox AI...</Say>
   <Connect>
     <Stream url="${protocol}://${host}/media-stream?agentId=${agentId}" />
   </Connect>
@@ -762,7 +761,6 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
   <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?callUuid=${callUuid}&amp;customerPhone=${encodeURIComponent(fromNumber)}</Stream>
 </Response>`);
 });
@@ -871,7 +869,6 @@ app.post([
   res.type('text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Speak voice="WOMAN" language="en-US">Connecting you to Vox AI...</Speak>
   <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${streamUrl}</Stream>
 </Response>`);
 });
