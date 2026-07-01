@@ -487,7 +487,7 @@ async function runCampaignQueue(campaignId) {
             const finalCost = Number(calculatedCost.toFixed(4));
 
             // Deduct balance
-            const newBalance = Math.max(0, Number((currentWalletBalance - finalCost).toFixed(4)));
+            const newBalance = Number((currentWalletBalance - finalCost).toFixed(4));
 
             // Update wallet balance in organizations table
             const { error: balanceUpdateErr } = await supabase
@@ -1015,7 +1015,7 @@ app.all('/api/vobiz/events', async (req, res) => {
 
             // Deduct additional cost if any
             if (additionalCost > 0) {
-              const newBalance = Math.max(0, Number((currentWalletBalance - additionalCost).toFixed(4)));
+              const newBalance = Number((currentWalletBalance - additionalCost).toFixed(4));
               
               const { error: balanceUpdateErr } = await supabase
                 .from('organizations')
@@ -1916,7 +1916,7 @@ wss.on('connection', async (ws, request) => {
         const finalCost = Number(calculatedCost.toFixed(4));
         
         // Deduct balance
-        const newBalance = Math.max(0, Number((currentWalletBalance - finalCost).toFixed(4)));
+        const newBalance = Number((currentWalletBalance - finalCost).toFixed(4));
         
         // Update wallet balance in organizations table
         const { error: balanceUpdateErr } = await supabase
