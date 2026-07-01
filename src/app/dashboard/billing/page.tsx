@@ -49,6 +49,11 @@ export default function BillingPage() {
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([]);
   const [recentBilledCalls, setRecentBilledCalls] = useState<BilledCall[]>([]);
 
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [organizationId, setOrganizationId] = useState("");
+  const [rechargeAmount, setRechargeAmount] = useState("500");
+  const [recharging, setRecharging] = useState(false);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -65,6 +70,18 @@ export default function BillingPage() {
           
         if (!membership) return;
         const orgId = membership.organization_id;
+
+        // Fetch organization details (wallet_balance)
+        const { data: orgData, error: orgErr } = await supabase
+          .from('organizations')
+          .select('id, wallet_balance')
+          .eq('id', orgId)
+          .maybeSingle();
+          
+        if (!orgErr && orgData) {
+          setWalletBalance(Number(orgData.wallet_balance) || 0);
+          setOrganizationId(orgData.id);
+        }
 
         // Fetch all completed call logs to compute exact duration & accumulated cost
         const { data: logs, error: logsErr } = await supabase
@@ -230,6 +247,119 @@ export default function BillingPage() {
     }
   };
 
+  // Load Razorpay Script Dynamically
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      // Clean up script on unmount
+      const existingScript = document.querySelector(`script[src="${script.src}"]`);
+      if (existingScript) {
+        document.body.removeChild(existingScript);
+      }
+    };
+  }, []);
+
+  const handleRazorpayRecharge = async () => {
+    const amountNum = Number(rechargeAmount);
+    if (isNaN(amountNum) || amountNum < 100) {
+      alert("Minimum recharge amount is ₹100");
+      return;
+    }
+
+    setRecharging(true);
+    try {
+      const res = await fetch("/api/razorpay/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amountNum, organizationId }),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        let errorMessage = errorText;
+        try {
+          const parsed = JSON.parse(errorText);
+          if (parsed && parsed.error) errorMessage = parsed.error;
+        } catch (_) {}
+        throw new Error(errorMessage);
+      }
+
+      const orderData = await res.json();
+      
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "VoxAura AI",
+        description: `Wallet Top-up of ₹${amountNum}`,
+        order_id: orderData.id,
+        prefill: {
+          name: user?.email?.split("@")[0] || "Customer",
+          email: user?.email || "",
+        },
+        theme: {
+          color: "#7c3aed",
+        },
+        handler: async function (response: any) {
+          try {
+            const verifyRes = await fetch("/api/razorpay/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                amount: amountNum,
+                organizationId
+              }),
+            });
+
+            if (!verifyRes.ok) {
+              const errorText = await verifyRes.text();
+              let errorMessage = errorText;
+              try {
+                const parsed = JSON.parse(errorText);
+                if (parsed && parsed.error) errorMessage = parsed.error;
+              } catch (_) {}
+              throw new Error(errorMessage);
+            }
+
+            const verifyData = await verifyRes.json();
+            if (verifyData.success) {
+              alert(`Payment successful! Credited ₹${amountNum} to your wallet.`);
+              setWalletBalance(verifyData.newBalance);
+            } else {
+              alert("Payment verification failed.");
+            }
+          } catch (verifyErr: any) {
+            console.error("Verification error:", verifyErr);
+            alert("Error verifying payment: " + verifyErr.message);
+          } finally {
+            setRecharging(false);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setRecharging(false);
+          }
+        }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
+    } catch (err: any) {
+      console.error("Recharge error:", err);
+      alert("Error starting payment gateway: " + err.message);
+      setRecharging(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Header section */}
@@ -318,7 +448,7 @@ export default function BillingPage() {
         </div>
 
         {/* Quick summary stats */}
-        <div className="glass-panel rounded-2xl p-6 border border-zinc-800 flex flex-col justify-between">
+        <div className="glass-panel rounded-2xl p-6 border border-zinc-800 flex flex-col justify-between space-y-4">
           <div className="space-y-1">
             <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider block">
               Active Tier Profile
@@ -333,17 +463,53 @@ export default function BillingPage() {
             </div>
           </div>
 
-          <div className="space-y-2 border-t border-zinc-900 pt-4 mt-4">
+          <div className="space-y-2 border-t border-zinc-900 pt-4">
+            <div className="flex justify-between text-xs text-zinc-400">
+              <span>Wallet Balance:</span>
+              <span className={`font-mono font-bold ${walletBalance < 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                ₹{loading ? "0.00" : walletBalance.toFixed(2)}
+              </span>
+            </div>
             <div className="flex justify-between text-xs text-zinc-400">
               <span>Accumulated Charges:</span>
-              <span className="font-mono text-emerald-400 font-bold">
+              <span className="font-mono text-zinc-300 font-bold">
                 ₹{loading ? "0.00" : totalCost.toFixed(2)}
               </span>
             </div>
             <div className="flex justify-between text-xs text-zinc-400">
               <span>Billing Rate:</span>
-              <span className="text-zinc-200 font-mono">₹3.5 / min (exceeded)</span>
+              <span className="text-zinc-200 font-mono">₹3.5 / min</span>
             </div>
+          </div>
+
+          {/* Razorpay Recharge Field */}
+          <div className="border-t border-zinc-900 pt-4 space-y-2.5">
+            <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">
+              Recharge Wallet
+            </span>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-2 text-zinc-500 text-xs font-bold">₹</span>
+                <input
+                  type="number"
+                  min="100"
+                  value={rechargeAmount}
+                  onChange={(e) => setRechargeAmount(e.target.value)}
+                  placeholder="500"
+                  className="w-full pl-6 pr-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-violet-500/50 transition-colors"
+                />
+              </div>
+              <button
+                onClick={handleRazorpayRecharge}
+                disabled={recharging || !organizationId}
+                className="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-800 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-violet-600/10 cursor-pointer flex items-center justify-center min-w-[90px]"
+              >
+                {recharging ? "Processing..." : "Recharge"}
+              </button>
+            </div>
+            <span className="text-[9px] text-zinc-500 block leading-tight">
+              * Minimum recharge is ₹100. Instant credits via UPI, Cards, and Netbanking.
+            </span>
           </div>
         </div>
       </div>
