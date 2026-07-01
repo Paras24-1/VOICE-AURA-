@@ -74,7 +74,9 @@ export async function POST(req: Request) {
     }
 
     const currentBalance = Number(org.wallet_balance) || 0;
-    const newBalance = Number((currentBalance + amount).toFixed(4));
+    // Deduct 18% GST: net = paid / 1.18
+    const creditedAmount = Number((amount / 1.18).toFixed(4));
+    const newBalance = Number((currentBalance + creditedAmount).toFixed(4));
 
     const { error: updateErr } = await supabase
       .from("organizations")
@@ -89,11 +91,12 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log(`[Razorpay Verify API] Successfully credited ₹${amount}. New balance: ₹${newBalance}`);
+    console.log(`[Razorpay Verify API] Successfully credited ₹${creditedAmount} (after 18% GST deduction on ₹${amount}). New balance: ₹${newBalance}`);
 
     return NextResponse.json({
       success: true,
       newBalance,
+      creditedAmount,
     });
   } catch (err: any) {
     console.error("[Razorpay Verify API] Verification error:", err);

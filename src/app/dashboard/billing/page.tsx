@@ -332,7 +332,7 @@ export default function BillingPage() {
 
             const verifyData = await verifyRes.json();
             if (verifyData.success) {
-              alert(`Payment successful! Credited ₹${amountNum} to your wallet.`);
+              alert(`Payment successful! Credited ₹${Number(verifyData.creditedAmount).toFixed(2)} (after 18% GST deduction on ₹${amountNum}) to your wallet.`);
               setWalletBalance(verifyData.newBalance);
             } else {
               alert("Payment verification failed.");
