@@ -434,7 +434,15 @@ export default function CampaignsPage() {
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        const errText = await response.text();
+        let errMsg = errText;
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed && parsed.error) {
+            errMsg = parsed.error;
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
       }
 
       await fetchCampaigns();
@@ -457,7 +465,15 @@ export default function CampaignsPage() {
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        const errText = await response.text();
+        let errMsg = errText;
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed && parsed.error) {
+            errMsg = parsed.error;
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
       }
 
       await fetchCampaigns();

@@ -39,10 +39,18 @@ export async function POST(req: Request) {
       }
     }
     
-    if (!response || !response.ok) {
+    if (!response) {
       return NextResponse.json(
-        { error: `Gateway connection failed. Make sure server.js is running. Error: ${lastError?.message || "Response not OK"}` },
+        { error: `Gateway connection failed. Make sure server.js is running. Error: ${lastError?.message || "No response"}` },
         { status: 502 }
+      );
+    }
+    
+    if (!response.ok) {
+      const errText = await response.text();
+      return NextResponse.json(
+        { error: errText || "Response not OK from Gateway" },
+        { status: response.status }
       );
     }
     
