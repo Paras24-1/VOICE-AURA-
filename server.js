@@ -243,6 +243,8 @@ async function startVobizRecording(callUuid, reqHost) {
       },
       body: JSON.stringify({
         file_format: 'mp3',
+        time_limit: 1800, // 30 minutes limit instead of the default 60s
+        timeLimit: 1800,
         callback_url: callbackUrl,
         callbackUrl: callbackUrl,
         action: callbackUrl,
