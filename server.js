@@ -1800,14 +1800,24 @@ wss.on('connection', async (ws, request) => {
   geminiWs.on('close', (code, reason) => {
     console.log(`[Gemini] Connection closed: Code=${code}, Reason=${reason.toString()}`);
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close(1011, `Gemini disconnected: ${reason.toString() || 'unknown reason'}`);
+      // Truncate close reason to prevent RFC 6455 RangeError crash (must not exceed 123 bytes)
+      let reasonStr = reason.toString() || 'unknown reason';
+      if (reasonStr.length > 80) {
+        reasonStr = reasonStr.substring(0, 80) + '...';
+      }
+      ws.close(1011, `Gemini disconnected: ${reasonStr}`);
     }
   });
 
   geminiWs.on('error', (err) => {
     console.error('[Gemini] WebSocket client error:', err);
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close(1011, `Gemini API error: ${err.message || 'unknown'}`);
+      // Truncate error message to prevent RFC 6455 RangeError crash (must not exceed 123 bytes)
+      let errMsg = err.message || 'unknown';
+      if (errMsg.length > 80) {
+        errMsg = errMsg.substring(0, 80) + '...';
+      }
+      ws.close(1011, `Gemini API error: ${errMsg}`);
     }
   });
 
