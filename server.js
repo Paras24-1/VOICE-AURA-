@@ -36,6 +36,7 @@ const activeCallContexts = new Map(); // Map to store call-specific lead context
 const activeCallContextsByPhone = new Map(); // Map to resolve context via customer phone number fallback
 const pendingCallRecordings = new Map(); // Map to cache recording URLs to resolve race condition
 const callDebugLogs = new Map(); // Map to store programmatic recording debug logs
+let geminiKeyIndex = 0; // Index for round-robin Gemini API key rotation
 
 // Helper to format target transfer numbers to E.164 format
 function formatTransferNumber(number, defaultCallerId = '') {
@@ -1339,6 +1340,23 @@ wss.on('connection', async (ws, request) => {
   
   console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}, CallSid=${callSid}`);
 
+  // WebSocket Heartbeat / Keep-alive to prevent premature carrier or gateway timeout disconnections
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
+  const pingInterval = setInterval(() => {
+    if (!ws.isAlive) {
+      console.log(`[WebSocket] Dead connection detected for call ${callSid || 'unknown'}, terminating.`);
+      clearInterval(pingInterval);
+      ws.terminate();
+      return;
+    }
+    ws.isAlive = false;
+    if (ws.readyState === WebSocket.OPEN) ws.ping();
+  }, 30000); // Heartbeat ping check every 30 seconds
+
+  ws.on('close', () => clearInterval(pingInterval));
+
   // Extract custom lead context if passed via query parameter or in-memory map
   let contextParam = url.searchParams.get('context') || url.searchParams.get('amp;context');
   let leadContext = null;
@@ -1426,19 +1444,27 @@ wss.on('connection', async (ws, request) => {
     }
   }
 
-  // Define API keys and endpoints
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_API_KEY) {
-    console.error('[Gemini] Error: GEMINI_API_KEY environment variable is not defined.');
+  // Define API keys and endpoints with round-robin rotation
+  const GEMINI_API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
+    .split(',')
+    .map(key => key.trim())
+    .filter(Boolean);
+
+  if (GEMINI_API_KEYS.length === 0) {
+    console.error('[Gemini] Error: GEMINI_API_KEY or GEMINI_API_KEYS is not defined.');
     ws.close(1011, 'Missing Gemini API Key');
     return;
   }
 
+  // Rotate key round-robin
+  const currentKey = GEMINI_API_KEYS[geminiKeyIndex % GEMINI_API_KEYS.length];
+  geminiKeyIndex++;
+
   // Connect to Gemini Multimodal Live API WebSocket
   const geminiModel = 'models/gemini-3.1-flash-live-preview'; // Use the multimodal live API model
-  const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
+  const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${currentKey}`;
   
-  console.log('[Gemini] Initializing bi-directional WebSocket connection...');
+  console.log(`[Gemini] Initializing bi-directional WebSocket connection (Key Index: ${(geminiKeyIndex - 1) % GEMINI_API_KEYS.length})...`);
   const geminiWs = new WebSocket(geminiUrl);
 
   let streamSid = null;
@@ -1876,6 +1902,18 @@ wss.on('connection', async (ws, request) => {
   // Clean up and save metrics to DB when connection closes
   ws.on('close', async () => {
     console.log(`[WebSocket] Closed: Path=${pathname}`);
+
+    // Clean up in-memory call contexts maps to prevent memory leaks
+    if (callSid) {
+      activeCallContexts.delete(callSid);
+    }
+    if (customerPhone) {
+      const cleanPhone = customerPhone.replace(/[^\d]/g, '');
+      if (cleanPhone) {
+        const phoneKey = cleanPhone.slice(-10);
+        activeCallContextsByPhone.delete(phoneKey);
+      }
+    }
     
     // Close connection with Gemini
     if (geminiWs.readyState === WebSocket.OPEN || geminiWs.readyState === WebSocket.CONNECTING) {
