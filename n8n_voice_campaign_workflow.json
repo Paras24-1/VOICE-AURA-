@@ -1,0 +1,334 @@
+{
+  "name": "VoxAura AI Voice Campaign Dialer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trigger-voice-campaign",
+        "options": {}
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databaseTable",
+        "operation": "getRow",
+        "table": "campaigns",
+        "id": "={{ $json.body.campaign_id }}",
+        "columns": [
+          "organization_id"
+        ]
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0002",
+      "name": "Get Campaign Org ID",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "placeholder-supabase-credential-id"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databaseTable",
+        "operation": "getRow",
+        "table": "organizations",
+        "id": "={{ $json.organization_id }}",
+        "columns": [
+          "wallet_balance"
+        ]
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0003",
+      "name": "Get Wallet Balance",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "placeholder-supabase-credential-id"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ Number($json.wallet_balance) }}",
+              "operation": "greater",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0004",
+      "name": "Has Balance?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databaseTable",
+        "operation": "update",
+        "table": "campaigns",
+        "id": "={{ $node.Webhook.json.body.campaign_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "paused"
+            }
+          ]
+        }
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0005",
+      "name": "Pause Campaign (Low Credits)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        150
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "placeholder-supabase-credential-id"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const contacts = $('Webhook').item.json.body.contacts || [];\nreturn contacts.map(contact => ({\n  json: {\n    id: contact.id,\n    name: contact.name,\n    phone_number: contact.phone_number\n  }\n}));"
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0010",
+      "name": "Extract Contacts List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 5,
+        "options": {}
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0006",
+      "name": "Split into Batches of 5",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://your-voice-gateway.up.railway.app/api/calls/trigger",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone_number",
+              "value": "={{ $json.phone_number }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.name }}"
+            },
+            {
+              "name": "agentId",
+              "value": "={{ $node.Webhook.json.body.agent_id }}"
+            },
+            {
+              "name": "contactId",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0007",
+      "name": "Trigger Vobiz Direct Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1450,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0008",
+      "name": "Pacing Delay (10s)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databaseTable",
+        "operation": "update",
+        "table": "campaigns",
+        "id": "={{ $node.Webhook.json.body.campaign_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            }
+          ]
+        }
+      },
+      "id": "e0d0066e-214f-40e9-b541-10c0e70a0009",
+      "name": "Set Campaign Completed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        650
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "placeholder-supabase-credential-id"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Campaign Org ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Campaign Org ID": {
+      "main": [
+        [
+          {
+            "node": "Get Wallet Balance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Wallet Balance": {
+      "main": [
+        [
+          {
+            "node": "Has Balance?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Balance?": {
+      "main": [
+        [
+          {
+            "node": "Extract Contacts List",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pause Campaign (Low Credits)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Contacts List": {
+      "main": [
+        [
+          {
+            "node": "Split into Batches of 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split into Batches of 5": {
+      "main": [
+        [
+          {
+            "node": "Set Campaign Completed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trigger Vobiz Direct Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Vobiz Direct Call": {
+      "main": [
+        [
+          {
+            "node": "Pacing Delay (10s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pacing Delay (10s)": {
+      "main": [
+        [
+          {
+            "node": "Split into Batches of 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e0d0066e-214f-40e9-b541-10c0e70a0000",
+  "id": "VoxAuraCampaignDialer"
+}
