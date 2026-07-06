@@ -1208,7 +1208,8 @@ app.post('/api/campaigns/start', async (req, res) => {
         .from('campaign_contacts')
         .select('*')
         .eq('campaign_id', campaignId)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .range(0, 9999);
 
       if (!contactsErr && pendingContacts && pendingContacts.length > 0) {
         console.log(`[Campaign API] Triggering n8n voice campaign webhook for campaign ${campaignId} with ${pendingContacts.length} contacts...`);

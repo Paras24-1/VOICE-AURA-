@@ -139,7 +139,7 @@ export default function CampaignsPage() {
             .from("campaign_contacts")
             .select("*", { count: "exact", head: true })
             .eq("campaign_id", camp.id)
-            .eq("status", "completed");
+            .neq("status", "pending");
 
           return {
             ...camp,
@@ -164,7 +164,8 @@ export default function CampaignsPage() {
         .from("campaign_contacts")
         .select("*")
         .eq("campaign_id", campaignId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: true })
+        .range(0, 9999);
 
       if (error) throw error;
 
