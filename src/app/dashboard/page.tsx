@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   TrendingUp, Clock, Activity, Search,
-  CheckCircle2, AlertTriangle, XCircle, RefreshCw, Loader2
+  CheckCircle2, AlertTriangle, XCircle, RefreshCw, Loader2,
+  Phone
 } from "lucide-react";
 
 interface CallLog {
@@ -220,42 +221,23 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Minutes Gauge */}
-        <div className="glass-panel rounded-2xl p-6 flex items-center gap-6 h-44 border border-zinc-800">
-          <div className="relative w-24 h-24 flex items-center justify-center flex-shrink-0">
-            <svg className="w-24 h-24 transform -rotate-90">
-              <circle cx="48" cy="48" r="40" className="stroke-zinc-800" strokeWidth="7" fill="transparent" />
-              <circle
-                cx="48" cy="48" r="40"
-                className="stroke-violet-500"
-                strokeWidth="7" fill="transparent"
-                strokeDasharray={251.2}
-                strokeDashoffset={loading ? 251.2 : 251.2 - (251.2 * percentUsed) / 100}
-                strokeLinecap="round"
-              />
-            </svg>
-            <div className="absolute text-center">
-              <span className="text-lg font-heading font-extrabold text-white">
-                {loading ? "—" : `${Math.round(percentUsed)}%`}
-              </span>
-              <p className="text-[9px] text-zinc-500 font-mono uppercase">Quota</p>
-            </div>
+        {/* Minutes Used */}
+        <div className="glass-panel rounded-2xl p-6 flex flex-col justify-between h-44 border border-zinc-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Minutes Used</span>
+            <Phone className="w-4 h-4 text-violet-400" />
           </div>
-          <div className="flex-1 flex flex-col justify-between h-full py-1">
-            <div>
-              <span className="text-xs font-mono text-zinc-500 uppercase tracking-wider block">Minutes Used</span>
-              <span className="text-2xl font-heading font-extrabold text-white block mt-1">
+          <div>
+            <div className="flex items-baseline gap-2.5">
+              <span className="text-4xl font-heading font-extrabold text-white text-glow">
                 {loading ? "—" : stats.totalMinutes.toLocaleString()}
               </span>
+              <span className="text-xs text-zinc-500 font-mono">minutes</span>
             </div>
-            <div className="text-[11px] text-zinc-400">
-              {stats.totalCost > 0 ? (
-                <span className="text-emerald-400 font-semibold font-mono">
-                  Charges: ₹{stats.totalCost.toFixed(2)}
-                </span>
-              ) : (
-                <>Of <span className="font-mono text-zinc-300 font-bold">{stats.minutesLimit.toLocaleString()}</span> free mins.</>
-              )}
+            <div className="text-[11px] text-zinc-400 mt-4">
+              <span className="text-emerald-400 font-semibold font-mono">
+                Charges: ₹{stats.totalCost.toFixed(2)}
+              </span>
             </div>
           </div>
         </div>

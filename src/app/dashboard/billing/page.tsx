@@ -100,34 +100,17 @@ export default function BillingPage() {
         setTotalSeconds(calculatedSeconds);
         setTotalCost(calculatedCost);
         
-        // Determine current plan based on 600-minute threshold
-        const hasExceededFreeLimit = calculatedSeconds >= (600 * 60);
-        setCurrentPlan(hasExceededFreeLimit ? "paygo" : "free");
+        // Default plan to paygo
+        setCurrentPlan("paygo");
 
         // Define our custom pricing tiers structure statically
         const staticTiers: PricingTier[] = [
-          {
-            id: "free",
-            name: "Free Trial Plan",
-            price: "₹0",
-            frequency: "600 mins",
-            description: "Default starting plan for all new users. Includes 600 free minutes of voice streaming.",
-            features: [
-              "600 minutes of real-time voice streams",
-              "Low latency LLM-powered response node",
-              "Basic call routing & transfer",
-              "Standard dashboard log access"
-            ],
-            ctaText: "Active Tier",
-            popular: false,
-            stripePriceId: "price_free"
-          },
           {
             id: "paygo",
             name: "Aura Pay-As-You-Go",
             price: "₹3.5",
             frequency: "minute",
-            description: "Automatically billed on seconds-level increments after free quota is consumed.",
+            description: "Automatically billed on seconds-level increments.",
             features: [
               "Charged at ₹3.5 per call minute",
               "Unlimited minutes allocation",
@@ -390,15 +373,12 @@ export default function BillingPage() {
 
       {/* Usage Analytics Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Active Usage Quota Block */}
+        {/* Active Usage Block */}
         <div className="glass-panel rounded-2xl p-6 border border-zinc-800 lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="font-heading text-sm font-bold text-zinc-300 uppercase tracking-widest">
-              Active Billing Node Quota Usage
+              Active Billing Node Usage
             </h2>
-            <span className="text-xs text-zinc-400 font-mono">
-              Quota Limit: <strong className="text-zinc-200">600 mins free</strong>
-            </span>
           </div>
 
           <div className="space-y-4">
@@ -412,23 +392,11 @@ export default function BillingPage() {
                   {loading ? (
                     "Calculating..."
                   ) : (
-                    <>
-                      <strong className="text-white">
-                        {Math.floor(totalSeconds / 60)}m {totalSeconds % 60}s
-                      </strong>{" "}
-                      / 600 mins (
-                      {Math.min(((totalSeconds / (600 * 60)) * 100), 100).toFixed(1)}
-                      %)
-                    </>
+                    <strong className="text-white">
+                      {Math.floor(totalSeconds / 60)}m {totalSeconds % 60}s
+                    </strong>
                   )}
                 </span>
-              </div>
-              {/* Progress bar */}
-              <div className="w-full bg-zinc-950 rounded-full h-2.5 border border-zinc-900 overflow-hidden">
-                <div 
-                  className="bg-gradient-to-r from-violet-600 to-indigo-500 h-full rounded-full transition-all duration-500" 
-                  style={{ width: `${Math.min(((totalSeconds / (600 * 60)) * 100), 100)}%` }}
-                />
               </div>
             </div>
 
@@ -637,7 +605,7 @@ export default function BillingPage() {
                 {recentBilledCalls.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-zinc-500 font-mono">
-                      No metered transactions recorded. All calls are currently within the 600 free minutes allocation.
+                      No metered transactions recorded.
                     </td>
                   </tr>
                 ) : (
