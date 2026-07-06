@@ -317,7 +317,11 @@ export default function DashboardPage() {
                           </div>
                           <div>
                             <span className="font-semibold text-zinc-200 block">{log.agents?.name || "Unknown Agent"}</span>
-                            <span className="text-[10px] text-zinc-500 font-mono">{log.from_phone_number || log.id.substring(0, 8)}</span>
+                            <span className="text-[10px] text-zinc-500 font-mono">
+                              {log.from_phone_number === 'Vobiz Outbound' || log.from_phone_number === 'WebRTC Outbound Simulator'
+                                ? log.to_phone_number
+                                : log.from_phone_number || log.id.substring(0, 8)}
+                            </span>
                           </div>
                         </div>
                       </td>

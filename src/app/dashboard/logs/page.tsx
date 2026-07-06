@@ -183,7 +183,11 @@ export default function CallLogsPage() {
                             </div>
                             <div>
                               <span className="font-semibold text-zinc-200 block">{log.agents?.name || "Unknown Agent"}</span>
-                              <span className="text-[10px] text-zinc-500 font-mono">{log.from_phone_number || log.id.substring(0, 8)}</span>
+                              <span className="text-[10px] text-zinc-500 font-mono">
+                                {log.from_phone_number === 'Vobiz Outbound' || log.from_phone_number === 'WebRTC Outbound Simulator'
+                                  ? log.to_phone_number
+                                  : log.from_phone_number || log.id.substring(0, 8)}
+                              </span>
                             </div>
                           </div>
                         </td>
@@ -252,8 +256,14 @@ export default function CallLogsPage() {
                     <span className="font-semibold text-zinc-300 block mt-0.5">{formatDuration(selectedCall.duration_seconds)}</span>
                   </div>
                   <div>
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase block">Caller / Node</span>
-                    <span className="font-semibold text-zinc-300 block mt-0.5 truncate">{selectedCall.from_phone_number || "WebRTC Client"}</span>
+                    <span className="text-[9px] font-mono text-zinc-500 uppercase block">
+                      {selectedCall.from_phone_number === 'Vobiz Outbound' || selectedCall.from_phone_number === 'WebRTC Outbound Simulator' ? "Recipient / Client" : "Caller / Node"}
+                    </span>
+                    <span className="font-semibold text-zinc-300 block mt-0.5 truncate">
+                      {selectedCall.from_phone_number === 'Vobiz Outbound' || selectedCall.from_phone_number === 'WebRTC Outbound Simulator'
+                        ? selectedCall.to_phone_number
+                        : selectedCall.from_phone_number || "WebRTC Client"}
+                    </span>
                   </div>
                 </div>
 
