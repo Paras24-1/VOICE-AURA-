@@ -762,7 +762,7 @@ export default function CampaignsPage() {
                           ) : (
                             <button
                               onClick={() => handleStartCampaign(campaign.id)}
-                              disabled={actionLoading === campaign.id || campaign.status === "completed"}
+                              disabled={actionLoading === campaign.id || (campaign.status === "completed" && campaign.completed_contacts === campaign.total_contacts)}
                               className="p-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                               title="Start Campaign"
                             >
