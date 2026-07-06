@@ -979,7 +979,7 @@ app.all('/api/vobiz/events', async (req, res) => {
         if (isDialEnded) {
           newDuration = (callLog.duration_seconds || 0) + dialDuration;
         } else if (finalDuration > 0) {
-          newDuration = finalDuration + 5;
+          newDuration = finalDuration + 45;
         }
 
         if (newDuration > 0 && newDuration > (callLog.duration_seconds || 0)) {
@@ -1942,7 +1942,7 @@ wss.on('connection', async (ws, request) => {
       geminiWs.close();
     }
     
-    const callDuration = Math.round((Date.now() - callStartTime) / 1000) + 5;
+    const callDuration = Math.round((Date.now() - callStartTime) / 1000) + 45;
     
     // Auto-save call logs and transcripts in Supabase
     if (supabase && agentId && agentId !== 'default' && agentId !== 'new') {
