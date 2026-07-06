@@ -76,7 +76,8 @@ function isDummyPhoneNumber(phone) {
     '876543210',
     '1234567890',
     '9876543210',
-    '5555555'
+    '5555555',
+    '55501'
   ];
   for (const seq of dummySequences) {
     if (digits.includes(seq)) return true;
@@ -1138,6 +1139,14 @@ app.all('/api/vobiz/events', async (req, res) => {
     } catch (err) {
       console.error('[Vobiz Event] Error updating status:', err);
     }
+  }
+
+  if (req.query.action === 'dial-ended') {
+    res.type('text/xml');
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Hangup />
+</Response>`);
   }
 
   res.status(200).send('OK');
