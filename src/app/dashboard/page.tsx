@@ -82,7 +82,8 @@ export default function DashboardPage() {
       const { data: allLogsForBilling } = await supabase
         .from("call_logs")
         .select("duration_seconds, cost")
-        .eq("organization_id", currentOrgId);
+        .eq("organization_id", currentOrgId)
+        .gte("created_at", since);
 
       const logsArr = logs || [];
       const allBilling = allLogsForBilling || [];
