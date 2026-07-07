@@ -1402,6 +1402,14 @@ async function sendLeadDetailsEmail(agentConfig, leadDetails, callMetadata) {
         </tr>
       </table>
 
+      ${callMetadata.transcript ? `
+      <h3 style="color: #111827; font-size: 16px; font-weight: 700; margin: 25px 0 10px 0; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px;">Conversation Transcript</h3>
+      <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 15px; font-size: 13px; color: #374151; max-height: 350px; overflow-y: auto; line-height: 1.6; font-family: monospace; white-space: pre-wrap;">${callMetadata.transcript
+        .replace(/\[AGENT\]:/g, '<strong style="color: #6366f1;">Assistant:</strong>')
+        .replace(/\[USER\]:/g, '<strong style="color: #10b981;">Lead:</strong>')
+      }</div>
+      ` : ''}
+
       <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 35px; border-top: 1px solid #e5e7eb; padding-top: 15px; line-height: 1.5;">
         Sent automatically by your VoxAura Voice Assistant Gateway.
       </p>
@@ -2168,6 +2176,29 @@ wss.on('connection', async (ws, request) => {
         }
         const finalTranscript = transcriptString + (debugLogs.length > 0 ? `\n\n[RECORDING DEBUG]\n${debugLogs.join('\n')}` : '');
 
+        // Compile all known lead details (merging initial leadContext and any details collected during the call)
+        const mergedLeadDetails = {
+          ...(leadContext || {}),
+          ...(ws.collectedLeadDetails || {})
+        };
+
+        // Filter out internal system keys to present a clean table
+        const displayLeadDetails = {};
+        for (const [k, v] of Object.entries(mergedLeadDetails)) {
+          const lk = k.toLowerCase();
+          if (
+            lk.includes('id') || 
+            lk.includes('created') || 
+            lk.includes('updated') || 
+            lk.includes('phone') || 
+            lk.includes('employee') || 
+            lk.includes('url')
+          ) {
+            continue;
+          }
+          displayLeadDetails[k] = v;
+        }
+
         const { error } = await supabase
           .from('call_logs')
           .insert({
@@ -2181,7 +2212,7 @@ wss.on('connection', async (ws, request) => {
             cost: finalCost,
             call_sid: callSid || null,
             recording_url: finalRecordingUrl,
-            lead_details: ws.collectedLeadDetails || null
+            lead_details: Object.keys(displayLeadDetails).length > 0 ? displayLeadDetails : null
           });
           
         if (error) {
@@ -2189,16 +2220,15 @@ wss.on('connection', async (ws, request) => {
         } else {
           console.log('[Supabase] Call log transaction written successfully.');
           
-          if (ws.collectedLeadDetails) {
-            console.log('[Email Automation] Lead details found. Triggering SMTP dispatch...');
-            sendLeadDetailsEmail(agentConfig, ws.collectedLeadDetails, {
-              customerPhone: customerPhone || 'Unknown',
-              durationSeconds: callDuration,
-              callSid: callSid
-            }).catch(emailErr => {
-              console.error('[Email Automation] Async email error:', emailErr);
-            });
-          }
+          console.log('[Email Automation] Triggering email dispatch for completed call...');
+          sendLeadDetailsEmail(agentConfig, displayLeadDetails, {
+            customerPhone: customerPhone || 'Unknown',
+            durationSeconds: callDuration,
+            callSid: callSid,
+            transcript: finalTranscript
+          }).catch(emailErr => {
+            console.error('[Email Automation] Async email error:', emailErr);
+          });
           
           // Increment organization's usage metrics in the database
           const { error: usageErr } = await supabase
