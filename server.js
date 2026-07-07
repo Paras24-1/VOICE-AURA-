@@ -1576,7 +1576,40 @@ async function sendLeadDetailsEmail(agentConfig, leadDetails, callMetadata) {
     </div>
   `;
 
-  // 3. Configure Transporter and Send
+  const resendApiKey = (process.env.RESEND_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+
+  if (resendApiKey) {
+    console.log(`[Email Automation] RESEND_API_KEY found. Dispatching via Resend HTTP REST API to ${toEmail}...`);
+    try {
+      const fromSender = process.env.SMTP_FROM_EMAIL || 'VoxAura Leads <onboarding@resend.dev>';
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${resendApiKey}`
+        },
+        body: JSON.stringify({
+          from: fromSender,
+          to: toEmail,
+          subject: `[Lead Alert] ${agentConfig.name} - Details Collected for ${callMetadata.customerPhone}`,
+          html: emailHtml
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[Email Automation] Email successfully sent via Resend API. Response ID:', data.id);
+        return;
+      } else {
+        const errorText = await res.text();
+        console.error('[Email Automation] Resend API failed. Falling back to SMTP:', errorText);
+      }
+    } catch (apiErr) {
+      console.error('[Email Automation] Resend API connection error. Falling back to SMTP:', apiErr.message);
+    }
+  }
+
+  // 3. Configure Transporter and Send (Fallback)
   try {
     const transporter = nodemailer.createTransport({
       host: host,
