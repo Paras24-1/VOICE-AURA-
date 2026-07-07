@@ -1355,7 +1355,7 @@ Response MUST be a single clean JSON object matching this schema. Do not include
           parts: [{ text: prompt }]
         }],
         generationConfig: {
-          responseMimeType: "application/json"
+          response_mime_type: "application/json"
         }
       })
     });
