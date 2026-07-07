@@ -775,62 +775,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date() });
 });
 
-// Debug Gemini API Model Compatibility
-app.get('/api/debug-gemini', async (req, res) => {
-  const GEMINI_API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
-    .split(',')
-    .map(key => key.trim())
-    .filter(Boolean);
 
-  if (GEMINI_API_KEYS.length === 0) {
-    return res.json({ error: 'No Gemini API keys found in environment' });
-  }
-
-  const apiKey = GEMINI_API_KEYS[0];
-  const testModels = [
-    { version: 'v1', model: 'gemini-1.5-flash' },
-    { version: 'v1beta', model: 'gemini-1.5-flash' },
-    { version: 'v1', model: 'gemini-1.5-flash-latest' },
-    { version: 'v1beta', model: 'gemini-1.5-flash-latest' },
-    { version: 'v1', model: 'gemini-2.5-flash' },
-    { version: 'v1beta', model: 'gemini-2.5-flash' },
-    { version: 'v1', model: 'gemini-2.0-flash' },
-    { version: 'v1beta', model: 'gemini-2.0-flash' },
-    { version: 'v1beta', model: 'gemini-2.0-flash-exp' }
-  ];
-
-  const results = [];
-
-  for (const item of testModels) {
-    const url = `https://generativelanguage.googleapis.com/${item.version}/models/${item.model}:generateContent?key=${apiKey}`;
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Hello, respond with test-success.' }] }]
-        })
-      });
-
-      const text = await response.text();
-      results.push({
-        version: item.version,
-        model: item.model,
-        status: response.status,
-        ok: response.ok,
-        preview: text.substring(0, 150)
-      });
-    } catch (err) {
-      results.push({
-        version: item.version,
-        model: item.model,
-        error: err.message
-      });
-    }
-  }
-
-  res.json({ keysCount: GEMINI_API_KEYS.length, results });
-});
 
 // Vobiz Outbound Answer webhook (supports path params to prevent carrier query parameter stripping)
 app.post([
@@ -1380,7 +1325,7 @@ async function extractLeadDetailsFromTranscript(transcriptText, apiKeys) {
   }
 
   const apiKey = apiKeys[0];
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   const prompt = `
 You are an expert lead analyst. Analyze the following phone call conversation transcript between an AI voice assistant and a customer.
