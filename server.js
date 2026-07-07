@@ -1323,7 +1323,7 @@ async function extractLeadDetailsFromTranscript(transcriptText, apiKeys) {
   }
 
   const apiKey = apiKeys[0];
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
   const prompt = `
 You are an expert lead analyst. Analyze the following phone call conversation transcript between an AI voice assistant and a customer.
@@ -1378,14 +1378,19 @@ Response MUST be a single clean JSON object matching this schema. Do not include
 
 // Send notification email containing structured lead details via SMTP/nodemailer
 async function sendLeadDetailsEmail(agentConfig, leadDetails, callMetadata) {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 465);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const rawHost = (process.env.SMTP_HOST || '').trim().replace(/^["']|["']$/g, '');
+  const rawUser = (process.env.SMTP_USER || '').trim().replace(/^["']|["']$/g, '');
+  const rawPass = (process.env.SMTP_PASS || '').trim().replace(/^["']|["']$/g, '');
+  const rawPort = (process.env.SMTP_PORT || '').trim().replace(/^["']|["']$/g, '');
+
+  const host = rawHost;
+  const port = Number(rawPort || 465);
+  const user = rawUser;
+  const pass = rawPass;
   const fromEmail = process.env.SMTP_FROM_EMAIL || (user ? `"VoxAura Notifications" <${user}>` : '');
 
   if (!host || !user || !pass) {
-    console.log('[Email Automation] SMTP credentials not fully configured. Skipping email dispatch.');
+    console.log('[Email Automation] SMTP credentials not fully configured or empty after trimming. Skipping email dispatch.');
     return;
   }
 
