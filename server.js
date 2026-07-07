@@ -1316,6 +1316,66 @@ app.post('/api/calls/trigger', async (req, res) => {
   }
 });
 
+// Extract structured lead details from the conversation transcript using Gemini Flash
+async function extractLeadDetailsFromTranscript(transcriptText, apiKeys) {
+  if (!transcriptText || !apiKeys || apiKeys.length === 0) {
+    return {};
+  }
+
+  const apiKey = apiKeys[0];
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  const prompt = `
+You are an expert lead analyst. Analyze the following phone call conversation transcript between an AI voice assistant and a customer.
+Extract key structured details about the customer (lead) in JSON format.
+
+Transcript:
+"""
+${transcriptText}
+"""
+
+Extract the following fields if mentioned:
+- budget: The budget mentioned by the lead (e.g. "10 Lakhs")
+- location: The location/city of the lead (e.g. "Rohtak")
+- machine_interest: The type of machine or plant the lead wants (e.g. "Water Bottle Plant")
+- language: The language preferred (e.g. "Hindi")
+- notes: Any other relevant details mentioned.
+
+Response MUST be a single clean JSON object matching this schema. Do not include markdown code block formatting (like \`\`\`json). Just return the raw JSON object.
+  `;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (textResponse) {
+        return JSON.parse(textResponse.trim());
+      }
+    } else {
+      console.error('[Gemini Extractor] Failed call to Gemini API:', response.status, await response.text());
+    }
+  } catch (err) {
+    console.error('[Gemini Extractor] Error extracting details:', err.message);
+  }
+
+  return {};
+}
+
 // Send notification email containing structured lead details via SMTP/nodemailer
 async function sendLeadDetailsEmail(agentConfig, leadDetails, callMetadata) {
   const host = process.env.SMTP_HOST;
@@ -2177,10 +2237,24 @@ wss.on('connection', async (ws, request) => {
         const finalTranscript = transcriptString + (debugLogs.length > 0 ? `\n\n[RECORDING DEBUG]\n${debugLogs.join('\n')}` : '');
 
         // Compile all known lead details (merging initial leadContext and any details collected during the call)
-        const mergedLeadDetails = {
+        let mergedLeadDetails = {
           ...(leadContext || {}),
           ...(ws.collectedLeadDetails || {})
         };
+
+        // Fallback: If no lead details were captured/merged, extract them from the transcript using Gemini 1.5 Flash
+        if (Object.keys(mergedLeadDetails).length === 0 && transcriptString) {
+          console.log('[Gemini Extractor] No lead details resolved. Extracting from transcript...');
+          try {
+            const extracted = await extractLeadDetailsFromTranscript(transcriptString, GEMINI_API_KEYS);
+            if (extracted && Object.keys(extracted).length > 0) {
+              console.log('[Gemini Extractor] Extracted details:', JSON.stringify(extracted));
+              mergedLeadDetails = { ...mergedLeadDetails, ...extracted };
+            }
+          } catch (e) {
+            console.error('[Gemini Extractor] Fallback extraction failed:', e.message);
+          }
+        }
 
         // Filter out internal system keys to present a clean table
         const displayLeadDetails = {};
