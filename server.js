@@ -1341,7 +1341,7 @@ Extract the following fields if mentioned:
 - language: The language preferred (e.g. "Hindi")
 - notes: Any other relevant details mentioned.
 
-Response MUST be a single clean JSON object matching this schema. Do not include markdown code block formatting (like \`\`\`json). Just return the raw JSON object.
+Response MUST be a valid JSON object matching this schema. You may wrap it in a markdown code block (e.g. \`\`\`json ... \`\`\`) or return it as raw text.
   `;
 
   try {
@@ -1353,18 +1353,19 @@ Response MUST be a single clean JSON object matching this schema. Do not include
       body: JSON.stringify({
         contents: [{
           parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          response_mime_type: "application/json"
-        }
+        }]
       })
     });
 
     if (response.ok) {
       const result = await response.json();
-      const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      let textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
       if (textResponse) {
-        return JSON.parse(textResponse.trim());
+        textResponse = textResponse.trim();
+        // Regex to extract JSON content even if wrapped in markdown code blocks
+        const jsonMatch = textResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, textResponse];
+        const jsonText = (jsonMatch[1] || textResponse).trim();
+        return JSON.parse(jsonText);
       }
     } else {
       console.error('[Gemini Extractor] Failed call to Gemini API:', response.status, await response.text());
