@@ -28,6 +28,7 @@ interface CallLog {
   created_at: string;
   transcript: string | null;
   recording_url?: string | null;
+  lead_details?: Record<string, any> | null;
 }
 
 export default function CallLogsPage() {
@@ -266,6 +267,31 @@ export default function CallLogsPage() {
                     </span>
                   </div>
                 </div>
+
+                {/* Lead Details Collected card */}
+                {selectedCall.lead_details && Object.keys(selectedCall.lead_details).length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-900/60 space-y-2">
+                    <span className="text-[9px] font-mono text-zinc-500 uppercase block tracking-wider font-semibold text-violet-400">
+                      Extracted Lead Details
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                      {Object.entries(selectedCall.lead_details).map(([key, value]) => {
+                        const formattedKey = key
+                          .split('_')
+                          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                          .join(' ');
+                        return (
+                          <div key={key} className="space-y-0.5">
+                            <span className="text-[9px] font-mono text-zinc-500 uppercase block">{formattedKey}</span>
+                            <span className="font-semibold text-zinc-300 block truncate" title={JSON.stringify(value).replace(/^"|"$/g, '')}>
+                              {JSON.stringify(value).replace(/^"|"$/g, '')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Call Recording Playback */}
                 {selectedCall.recording_url && (

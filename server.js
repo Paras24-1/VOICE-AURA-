@@ -5,6 +5,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const dotenv = require('dotenv');
+const nodemailer = require('nodemailer');
 
 // Load environment variables from Next.js .env.local file
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
@@ -1315,6 +1316,123 @@ app.post('/api/calls/trigger', async (req, res) => {
   }
 });
 
+// Send notification email containing structured lead details via SMTP/nodemailer
+async function sendLeadDetailsEmail(agentConfig, leadDetails, callMetadata) {
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || 465);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const fromEmail = process.env.SMTP_FROM_EMAIL || (user ? `"VoxAura Notifications" <${user}>` : '');
+
+  if (!host || !user || !pass) {
+    console.log('[Email Automation] SMTP credentials not fully configured. Skipping email dispatch.');
+    return;
+  }
+
+  // 1. Resolve notification email
+  let toEmail = agentConfig.notification_email;
+  if (!toEmail) {
+    console.log('[Email Automation] No notification email configured on agent settings. Fetching organization admin email fallback...');
+    try {
+      if (supabase) {
+        const { data: memberData, error: memberErr } = await supabase
+          .from('organization_members')
+          .select('profiles(email)')
+          .eq('organization_id', agentConfig.organization_id)
+          .eq('role', 'admin')
+          .maybeSingle();
+
+        if (!memberErr && memberData && memberData.profiles && memberData.profiles.email) {
+          toEmail = memberData.profiles.email;
+          console.log(`[Email Automation] Resolved fallback admin email: ${toEmail}`);
+        }
+      }
+    } catch (e) {
+      console.error('[Email Automation] Error fetching admin fallback email:', e.message);
+    }
+  }
+
+  if (!toEmail) {
+    console.log('[Email Automation] No recipient email address could be resolved. Aborting email dispatch.');
+    return;
+  }
+
+  console.log(`[Email Automation] Dispatching lead details email to ${toEmail}...`);
+
+  // 2. Format details into HTML
+  let detailsHtml = '';
+  for (const [key, value] of Object.entries(leadDetails)) {
+    const formattedKey = key
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    detailsHtml += `
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold; width: 40%; text-transform: capitalize; color: #4b5563;">${formattedKey}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #1f2937;">${JSON.stringify(value).replace(/^"|"$/g, '')}</td>
+      </tr>
+    `;
+  }
+
+  const emailHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 25px; border: 1px solid #e5e7eb; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+      <div style="text-align: center; margin-bottom: 25px;">
+        <h2 style="color: #6366f1; margin: 0 0 8px 0; font-size: 24px; font-weight: 800;">Lead Qualified! 🎉</h2>
+        <p style="color: #6b7280; font-size: 14px; margin: 0;">AI Voice Agent <strong>${agentConfig.name}</strong> has gathered the following details.</p>
+      </div>
+      
+      <h3 style="color: #111827; font-size: 16px; font-weight: 700; margin: 20px 0 10px 0; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px;">Lead Details</h3>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 14px;">
+        ${detailsHtml}
+      </table>
+
+      <h3 style="color: #111827; font-size: 16px; font-weight: 700; margin: 20px 0 10px 0; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px;">Call Information</h3>
+      <table style="width: 100%; border-collapse: collapse; background-color: #f9fafb; border-radius: 12px; font-size: 13px; color: #4b5563;">
+        <tr>
+          <td style="padding: 12px; font-weight: 600; width: 40%;">Customer Phone</td>
+          <td style="padding: 12px; color: #111827; font-weight: 500;">${callMetadata.customerPhone}</td>
+        </tr>
+        <tr>
+          <td style="padding: 12px; font-weight: 600;">Duration</td>
+          <td style="padding: 12px; color: #111827; font-weight: 500;">${Math.floor(callMetadata.durationSeconds / 60)}m ${callMetadata.durationSeconds % 60}s</td>
+        </tr>
+        <tr>
+          <td style="padding: 12px; font-weight: 600;">Call ID</td>
+          <td style="padding: 12px; font-family: monospace; font-size: 11px; color: #6b7280;">${callMetadata.callSid || 'N/A'}</td>
+        </tr>
+      </table>
+
+      <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 35px; border-top: 1px solid #e5e7eb; padding-top: 15px; line-height: 1.5;">
+        Sent automatically by your VoxAura Voice Assistant Gateway.
+      </p>
+    </div>
+  `;
+
+  // 3. Configure Transporter and Send
+  try {
+    const transporter = nodemailer.createTransport({
+      host: host,
+      port: port,
+      secure: port === 465,
+      auth: {
+        user: user,
+        pass: pass
+      }
+    });
+
+    const info = await transporter.sendMail({
+      from: fromEmail,
+      to: toEmail,
+      subject: `[Lead Alert] ${agentConfig.name} - Details Collected for ${callMetadata.customerPhone}`,
+      html: emailHtml
+    });
+
+    console.log('[Email Automation] Email notification dispatched successfully:', info.messageId);
+  } catch (err) {
+    console.error('[Email Automation] Failed to dispatch SMTP email notification:', err.message);
+  }
+}
+
 // WebSocket connection routing logic
 server.on('upgrade', (request, socket, head) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
@@ -1546,20 +1664,36 @@ wss.on('connection', async (ws, request) => {
           }
         },
         tools: [{
-          functionDeclarations: [{
-            name: "transferCall",
-            description: "Transfer the active telephone call to a human agent/support representative when requested by the caller.",
-            parameters: {
-              type: "object",
-              properties: {
-                targetNumber: {
-                  type: "string",
-                  description: "The phone number to transfer the call to. By default, it will be the default support agent number if not provided."
-                }
-              },
-              required: []
+          functionDeclarations: [
+            {
+              name: "transferCall",
+              description: "Transfer the active telephone call to a human agent/support representative when requested by the caller.",
+              parameters: {
+                type: "object",
+                properties: {
+                  targetNumber: {
+                    type: "string",
+                    description: "The phone number to transfer the call to. By default, it will be the default support agent number if not provided."
+                  }
+                },
+                required: []
+              }
+            },
+            {
+              name: "submitLeadDetails",
+              description: "Submit collected details from the lead (such as budget, location, machine interest, or other requirements) immediately when they are gathered or when the call is concluding.",
+              parameters: {
+                type: "object",
+                properties: {
+                  details: {
+                    type: "object",
+                    description: "Structured key-value pairs representing the collected details (e.g. { budget: '5 Lakhs', machine_interest: 'Excavator' })."
+                  }
+                },
+                required: ["details"]
+              }
             }
-          }]
+          ]
         }],
         systemInstruction: {
           parts: [
@@ -1582,7 +1716,7 @@ wss.on('connection', async (ws, request) => {
                   contextStr += '--------------------------------------------------\n';
                   systemPromptText += contextStr;
                 }
-                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.\n\nIMPORTANT: Speak at a slightly slower, calm, and conversational pace. Take brief pauses between sentences to ensure clear, natural, and friendly communication.';
+                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.\n\nWhen you successfully gather key information from the user (such as budget, machinery interest, or location), you MUST invoke the `submitLeadDetails` tool to record them immediately.\n\nIMPORTANT: Speak at a slightly slower, calm, and conversational pace. Take brief pauses between sentences to ensure clear, natural, and friendly communication.';
               })()
             }
           ]
@@ -1709,6 +1843,29 @@ wss.on('connection', async (ws, request) => {
                 output: {
                   success: success,
                   message: success ? `Call successfully transferred to ${targetNumber}` : `Failed to transfer call: ${errorMsg}`
+                }
+              }
+            });
+          } else if (fc.name === 'submitLeadDetails') {
+            console.log(`[Gemini ToolCall] submitLeadDetails invoked with args:`, JSON.stringify(fc.args));
+            let success = false;
+            try {
+              if (fc.args && fc.args.details) {
+                ws.collectedLeadDetails = fc.args.details;
+                console.log(`[Gemini ToolCall] Stored lead details on WebSocket connection:`, JSON.stringify(ws.collectedLeadDetails));
+                success = true;
+              }
+            } catch (err) {
+              console.error('[Gemini ToolCall] Error handling submitLeadDetails:', err);
+            }
+
+            functionResponses.push({
+              name: fc.name,
+              id: fc.id,
+              response: {
+                output: {
+                  success: success,
+                  message: success ? "Lead details successfully recorded." : "Failed to record lead details."
                 }
               }
             });
@@ -2023,13 +2180,25 @@ wss.on('connection', async (ws, request) => {
             transcript: finalTranscript,
             cost: finalCost,
             call_sid: callSid || null,
-            recording_url: finalRecordingUrl
+            recording_url: finalRecordingUrl,
+            lead_details: ws.collectedLeadDetails || null
           });
           
         if (error) {
           console.error('[Supabase] Error writing call log:', error.message);
         } else {
           console.log('[Supabase] Call log transaction written successfully.');
+          
+          if (ws.collectedLeadDetails) {
+            console.log('[Email Automation] Lead details found. Triggering SMTP dispatch...');
+            sendLeadDetailsEmail(agentConfig, ws.collectedLeadDetails, {
+              customerPhone: customerPhone || 'Unknown',
+              durationSeconds: callDuration,
+              callSid: callSid
+            }).catch(emailErr => {
+              console.error('[Email Automation] Async email error:', emailErr);
+            });
+          }
           
           // Increment organization's usage metrics in the database
           const { error: usageErr } = await supabase
