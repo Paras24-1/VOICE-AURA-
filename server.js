@@ -775,6 +775,98 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date() });
 });
 
+// Debug SMTP Email Configuration
+app.get('/api/test-email', async (req, res) => {
+  const rawHost = (process.env.SMTP_HOST || '').trim().replace(/^["']|["']$/g, '');
+  const rawUser = (process.env.SMTP_USER || '').trim().replace(/^["']|["']$/g, '');
+  const rawPass = (process.env.SMTP_PASS || '').trim().replace(/^["']|["']$/g, '');
+  const rawPort = (process.env.SMTP_PORT || '').trim().replace(/^["']|["']$/g, '');
+
+  if (!rawHost || !rawUser || !rawPass) {
+    return res.json({ error: 'SMTP environment variables are not fully configured.' });
+  }
+
+  const testConfigs = [
+    {
+      name: 'Current Settings',
+      host: rawHost,
+      port: Number(rawPort || 465),
+      secure: Number(rawPort || 465) === 465,
+      auth: { user: rawUser, pass: rawPass }
+    },
+    {
+      name: 'Current Settings with TLS rejectUnauthorized false',
+      host: rawHost,
+      port: Number(rawPort || 465),
+      secure: Number(rawPort || 465) === 465,
+      auth: { user: rawUser, pass: rawPass },
+      tls: { rejectUnauthorized: false }
+    },
+    {
+      name: 'Force Port 587 TLS',
+      host: rawHost,
+      port: 587,
+      secure: false,
+      auth: { user: rawUser, pass: rawPass },
+      tls: { rejectUnauthorized: false }
+    },
+    {
+      name: 'Force Port 465 SSL',
+      host: rawHost,
+      port: 465,
+      secure: true,
+      auth: { user: rawUser, pass: rawPass },
+      tls: { rejectUnauthorized: false }
+    }
+  ];
+
+  const results = [];
+
+  for (const config of testConfigs) {
+    try {
+      console.log(`[SMTP Test] Testing config: ${config.name}...`);
+      const transporter = nodemailer.createTransport(config);
+      
+      // Verify connection
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Verification Timeout (10s)')), 10000);
+        transporter.verify((err) => {
+          clearTimeout(timeout);
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Send test email
+      const info = await transporter.sendMail({
+        from: process.env.SMTP_FROM_EMAIL || `"VoxAura Test" <${rawUser}>`,
+        to: rawUser, // Send to self
+        subject: `[SMTP Test Success] ${config.name}`,
+        text: `This is a successful SMTP connection test from VoxAura using configuration: ${config.name}`
+      });
+
+      results.push({
+        name: config.name,
+        port: config.port,
+        secure: config.secure,
+        success: true,
+        messageId: info.messageId
+      });
+    } catch (err) {
+      console.error(`[SMTP Test] Config ${config.name} failed:`, err.message);
+      results.push({
+        name: config.name,
+        port: config.port,
+        secure: config.secure,
+        success: false,
+        error: err.message
+      });
+    }
+  }
+
+  res.json({ results });
+});
+
 
 
 // Vobiz Outbound Answer webhook (supports path params to prevent carrier query parameter stripping)
