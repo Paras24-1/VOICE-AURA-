@@ -698,6 +698,7 @@ app.post('/api/twilio/incoming', async (req, res) => {
   <Connect>
     <Stream url="${protocol}://${host}/media-stream?agentId=${agentId}" />
   </Connect>
+  <Hangup />
 </Response>`);
 });
 
@@ -767,6 +768,7 @@ app.post('/api/vobiz/incoming', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${protocol}://${host}/vobiz-stream/${agentId}?callUuid=${callUuid}&amp;customerPhone=${encodeURIComponent(fromNumber)}</Stream>
+  <Hangup />
 </Response>`);
 });
 
@@ -969,6 +971,7 @@ app.post([
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">${streamUrl}</Stream>
+  <Hangup />
 </Response>`);
 });
 
@@ -1698,6 +1701,52 @@ wss.on('connection', async (ws, request) => {
 
   ws.on('close', () => clearInterval(pingInterval));
 
+  // Safety timeouts to prevent runaway billing and voicemail loops
+  const startTime = Date.now();
+  let lastUserSpeechTime = Date.now();
+  let hasUserSpoken = false;
+
+  const MAX_CALL_DURATION_MS = 180000; // 3 minutes maximum
+  const INITIAL_USER_SPEECH_TIMEOUT_MS = 30000; // Must say something in the first 30 seconds
+  const USER_INACTIVITY_TIMEOUT_MS = 45000; // Hang up if 45 seconds of silence
+
+  const safetyInterval = setInterval(() => {
+    if (ws.readyState !== WebSocket.OPEN) {
+      clearInterval(safetyInterval);
+      return;
+    }
+
+    const elapsed = Date.now() - startTime;
+
+    // 1. Hard call duration limit check (3 minutes)
+    if (elapsed > MAX_CALL_DURATION_MS) {
+      console.warn(`[Safety Guard] Hard maximum call duration limit of 3 minutes reached for call ${callSid || 'unknown'}. Terminating call.`);
+      clearInterval(safetyInterval);
+      ws.close();
+      return;
+    }
+
+    // 2. Initial user speech check (30 seconds)
+    if (!hasUserSpoken && (elapsed > INITIAL_USER_SPEECH_TIMEOUT_MS)) {
+      console.warn(`[Safety Guard] No customer speech detected in first 30 seconds for call ${callSid || 'unknown'}. Terminating call.`);
+      clearInterval(safetyInterval);
+      ws.close();
+      return;
+    }
+
+    // 3. User inactivity check (45 seconds)
+    if (hasUserSpoken && (Date.now() - lastUserSpeechTime > USER_INACTIVITY_TIMEOUT_MS)) {
+      console.warn(`[Safety Guard] Customer inactivity timeout (45s) reached for call ${callSid || 'unknown'}. Terminating call.`);
+      clearInterval(safetyInterval);
+      ws.close();
+      return;
+    }
+  }, 5000); // Check safety conditions every 5 seconds
+
+  ws.on('close', () => {
+    clearInterval(safetyInterval);
+  });
+
   // Extract custom lead context if passed via query parameter or in-memory map
   let contextParam = url.searchParams.get('context') || url.searchParams.get('amp;context');
   let leadContext = null;
@@ -2098,6 +2147,8 @@ wss.on('connection', async (ws, request) => {
         const userText = response.serverContent.inputTranscription.text;
         console.log(`[Gemini Transcript Input]: ${userText}`);
         transcript.push({ role: 'user', text: userText, timestamp: new Date() });
+        hasUserSpoken = true;
+        lastUserSpeechTime = Date.now();
       }
 
       if (response.serverContent?.outputTranscription?.text) {
