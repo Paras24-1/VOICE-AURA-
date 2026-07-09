@@ -33,6 +33,7 @@ if (supabaseUrl && supabaseServiceKey) {
 
 // Active campaigns map to track running dialing loops
 const activeCampaigns = new Map();
+let activeCallsCount = 0; // Global counter to track concurrent call streams
 const activeCallContexts = new Map(); // Map to store call-specific lead context (e.g. from n8n)
 const activeCallContextsByPhone = new Map(); // Map to resolve context via customer phone number fallback
 const pendingCallRecordings = new Map(); // Map to cache recording URLs to resolve race condition
@@ -1378,6 +1379,39 @@ app.post('/api/calls/trigger', async (req, res) => {
   const targetAgentId = agentId || 'default';
   console.log(`[Trigger Call API] Received request to dial ${phone_number} (Name: ${name || 'N/A'}, contactId: ${contactId || 'N/A'}) for agent: ${targetAgentId}`);
 
+  // 1. Concurrency limit protection
+  const concurrencyLimit = Number(process.env.CONCURRENCY_LIMIT || 3);
+  if (activeCallsCount >= concurrencyLimit) {
+    console.warn(`[Trigger Call API] Concurrency limit of ${concurrencyLimit} reached (active: ${activeCallsCount}). Rejecting call to ${phone_number}.`);
+    return res.status(429).json({ error: `Concurrency limit of ${concurrencyLimit} reached. Please try again in a few seconds.` });
+  }
+
+  // 2. Campaign running state verification (to respect dashboard pause state during n8n run)
+  if (supabase && contactId) {
+    try {
+      const { data: contactData } = await supabase
+        .from('campaign_contacts')
+        .select('campaign_id')
+        .eq('id', contactId)
+        .maybeSingle();
+
+      if (contactData && contactData.campaign_id) {
+        const { data: campaignData } = await supabase
+          .from('campaigns')
+          .select('status')
+          .eq('id', contactData.campaign_id)
+          .maybeSingle();
+
+        if (campaignData && campaignData.status !== 'running') {
+          console.log(`[Trigger Call API] Blocked call to ${phone_number} because campaign ${contactData.campaign_id} status is ${campaignData.status}`);
+          return res.status(400).json({ error: `Campaign is not running (current status: ${campaignData.status})` });
+        }
+      }
+    } catch (err) {
+      console.error('[Trigger Call API] Error verifying campaign status:', err.message);
+    }
+  }
+
   try {
     const contact = {
       id: contactId || undefined,
@@ -1682,7 +1716,8 @@ wss.on('connection', async (ws, request) => {
     }
   }
   
-  console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}, CallSid=${callSid}`);
+  activeCallsCount++;
+  console.log(`[WebSocket] Connected: Path=${pathname}, AgentId=${agentId}, ContactId=${contactId}, CallSid=${callSid}. Active concurrent calls: ${activeCallsCount}`);
 
   // WebSocket Heartbeat / Keep-alive to prevent premature carrier or gateway timeout disconnections
   ws.isAlive = true;
@@ -1736,6 +1771,8 @@ wss.on('connection', async (ws, request) => {
 
   ws.on('close', () => {
     clearInterval(safetyInterval);
+    activeCallsCount = Math.max(0, activeCallsCount - 1);
+    console.log(`[WebSocket] Closed connection for call ${callSid || 'unknown'}. Active concurrent calls: ${activeCallsCount}`);
   });
 
   // Extract custom lead context if passed via query parameter or in-memory map
