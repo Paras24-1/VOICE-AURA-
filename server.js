@@ -1706,7 +1706,6 @@ wss.on('connection', async (ws, request) => {
   let lastUserSpeechTime = Date.now();
   let hasUserSpoken = false;
 
-  const MAX_CALL_DURATION_MS = 180000; // 3 minutes maximum
   const INITIAL_USER_SPEECH_TIMEOUT_MS = 30000; // Must say something in the first 30 seconds
   const USER_INACTIVITY_TIMEOUT_MS = 45000; // Hang up if 45 seconds of silence
 
@@ -1718,15 +1717,7 @@ wss.on('connection', async (ws, request) => {
 
     const elapsed = Date.now() - startTime;
 
-    // 1. Hard call duration limit check (3 minutes)
-    if (elapsed > MAX_CALL_DURATION_MS) {
-      console.warn(`[Safety Guard] Hard maximum call duration limit of 3 minutes reached for call ${callSid || 'unknown'}. Terminating call.`);
-      clearInterval(safetyInterval);
-      ws.close();
-      return;
-    }
-
-    // 2. Initial user speech check (30 seconds)
+    // 1. Initial user speech check (30 seconds)
     if (!hasUserSpoken && (elapsed > INITIAL_USER_SPEECH_TIMEOUT_MS)) {
       console.warn(`[Safety Guard] No customer speech detected in first 30 seconds for call ${callSid || 'unknown'}. Terminating call.`);
       clearInterval(safetyInterval);
