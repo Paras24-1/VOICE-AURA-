@@ -1521,7 +1521,17 @@ async function sendLeadDetailsEmail(agentConfig, leadDetails, callMetadata) {
 
   // 2. Format details into HTML
   let detailsHtml = '';
-  for (const [key, value] of Object.entries(leadDetails)) {
+  let detailsObj = leadDetails || {};
+  if (typeof detailsObj === 'string') {
+    try {
+      detailsObj = JSON.parse(detailsObj);
+    } catch (e) {
+      console.error('[Email Automation] Failed to parse leadDetails string payload inside sendLeadDetailsEmail:', e.message);
+      detailsObj = { raw_payload: detailsObj };
+    }
+  }
+
+  for (const [key, value] of Object.entries(detailsObj)) {
     const formattedKey = key
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -2370,9 +2380,37 @@ wss.on('connection', async (ws, request) => {
         const finalTranscript = transcriptString + (debugLogs.length > 0 ? `\n\n[RECORDING DEBUG]\n${debugLogs.join('\n')}` : '');
 
         // Compile all known lead details (merging initial leadContext and any details collected during the call)
+        let parsedLeadContext = {};
+        if (leadContext) {
+          if (typeof leadContext === 'string') {
+            try {
+              parsedLeadContext = JSON.parse(leadContext);
+            } catch (e) {
+              console.error('[WebSocket] Failed to parse leadContext string:', e.message);
+              parsedLeadContext = { rawContext: leadContext };
+            }
+          } else if (typeof leadContext === 'object') {
+            parsedLeadContext = leadContext;
+          }
+        }
+
+        let parsedCollectedDetails = {};
+        if (ws.collectedLeadDetails) {
+          if (typeof ws.collectedLeadDetails === 'string') {
+            try {
+              parsedCollectedDetails = JSON.parse(ws.collectedLeadDetails);
+            } catch (e) {
+              console.error('[WebSocket] Failed to parse collectedLeadDetails string:', e.message);
+              parsedCollectedDetails = { rawCollected: ws.collectedLeadDetails };
+            }
+          } else if (typeof ws.collectedLeadDetails === 'object') {
+            parsedCollectedDetails = ws.collectedLeadDetails;
+          }
+        }
+
         let mergedLeadDetails = {
-          ...(leadContext || {}),
-          ...(ws.collectedLeadDetails || {})
+          ...parsedLeadContext,
+          ...parsedCollectedDetails
         };
 
         // Fallback: If no lead details were captured/merged, extract them from the transcript using Gemini 1.5 Flash
