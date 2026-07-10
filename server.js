@@ -2182,6 +2182,7 @@ wss.on('connection', async (ws, request) => {
       if (response.serverContent?.outputTranscription?.text) {
         const agentText = response.serverContent.outputTranscription.text;
         console.log(`[Gemini Transcript Output]: ${agentText}`);
+        lastUserSpeechTime = Date.now(); // Reset inactivity timer when agent is speaking
         
         const lastEntry = transcript[transcript.length - 1];
         if (lastEntry && lastEntry.role === 'agent') {
