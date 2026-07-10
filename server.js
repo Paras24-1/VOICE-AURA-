@@ -1741,8 +1741,8 @@ wss.on('connection', async (ws, request) => {
   let lastUserSpeechTime = Date.now();
   let hasUserSpoken = false;
 
-  const INITIAL_USER_SPEECH_TIMEOUT_MS = 12000; // Must say something in the first 12 seconds
-  const USER_INACTIVITY_TIMEOUT_MS = 18000; // Hang up if 18 seconds of silence
+  const INITIAL_USER_SPEECH_TIMEOUT_MS = 30000; // Must say something in the first 30 seconds
+  const USER_INACTIVITY_TIMEOUT_MS = 25000; // Hang up if 25 seconds of silence
 
   const safetyInterval = setInterval(() => {
     if (ws.readyState !== WebSocket.OPEN) {
@@ -1752,17 +1752,17 @@ wss.on('connection', async (ws, request) => {
 
     const elapsed = Date.now() - startTime;
 
-    // 1. Initial user speech check (12 seconds)
+    // 1. Initial user speech check (30 seconds)
     if (!hasUserSpoken && (elapsed > INITIAL_USER_SPEECH_TIMEOUT_MS)) {
-      console.warn(`[Safety Guard] No customer speech detected in first 12 seconds for call ${callSid || 'unknown'}. Terminating call.`);
+      console.warn(`[Safety Guard] No customer speech detected in first 30 seconds for call ${callSid || 'unknown'}. Terminating call.`);
       clearInterval(safetyInterval);
       ws.close();
       return;
     }
 
-    // 3. User inactivity check (18 seconds)
+    // 3. User inactivity check (25 seconds)
     if (hasUserSpoken && (Date.now() - lastUserSpeechTime > USER_INACTIVITY_TIMEOUT_MS)) {
-      console.warn(`[Safety Guard] Customer inactivity timeout (18s) reached for call ${callSid || 'unknown'}. Terminating call.`);
+      console.warn(`[Safety Guard] Customer inactivity timeout (25s) reached for call ${callSid || 'unknown'}. Terminating call.`);
       clearInterval(safetyInterval);
       ws.close();
       return;
