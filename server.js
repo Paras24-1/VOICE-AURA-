@@ -2205,8 +2205,43 @@ wss.on('connection', async (ws, request) => {
                     success = true;
                   }
                 } else {
-                  console.log(`[Gemini ToolCall] Direct call or missing contactId (${contactId}). Cannot update DB contact.`);
-                  success = true; // Return success to Gemini so agent knows it resolved
+                  console.log(`[Gemini ToolCall] Inbound or direct call. Attempting lookup by customerPhone: ${customerPhone}`);
+                  if (supabase && customerPhone) {
+                    const cleanPhone = customerPhone.replace(/[^\d]/g, '');
+                    if (cleanPhone) {
+                      const phoneKey = cleanPhone.slice(-10); // Match last 10 digits
+                      const { data: contacts, error: searchErr } = await supabase
+                        .from('campaign_contacts')
+                        .select('id')
+                        .ilike('phone_number', `%${phoneKey}`)
+                        .limit(1);
+
+                      if (!searchErr && contacts && contacts.length > 0) {
+                        const foundContactId = contacts[0].id;
+                        const { error: updateErr } = await supabase
+                          .from('campaign_contacts')
+                          .update({ 
+                            status: 'scheduled', 
+                            scheduled_at: dateTimeISO 
+                          })
+                          .eq('id', foundContactId);
+
+                        if (!updateErr) {
+                          console.log(`[Gemini ToolCall] Successfully scheduled callback for contact ${foundContactId} matched by phone ${customerPhone} at ${dateTimeISO}`);
+                          success = true;
+                        } else {
+                          console.error('[Gemini ToolCall] Error updating matched contact callback schedule:', updateErr.message);
+                        }
+                      } else {
+                        console.log(`[Gemini ToolCall] No matching contact found in database for phone ${customerPhone}.`);
+                        success = true; // Still return success to Gemini
+                      }
+                    } else {
+                      success = true;
+                    }
+                  } else {
+                    success = true;
+                  }
                 }
               }
             } catch (err) {
