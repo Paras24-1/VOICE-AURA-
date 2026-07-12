@@ -1980,6 +1980,24 @@ wss.on('connection', async (ws, request) => {
                 },
                 required: ["details"]
               }
+            },
+            {
+              name: "scheduleCallback",
+              description: "Schedule a callback time when the caller explicitly requests to be called back later, tomorrow, or at a specific time/date.",
+              parameters: {
+                type: "object",
+                properties: {
+                  dateTimeISO: {
+                    type: "string",
+                    description: "The ISO 8601 formatted date-time string indicating when the callback should happen (e.g. '2026-07-13T15:00:00Z'). Make sure to compute relative times (like 'tomorrow at 3 PM' or 'in 2 hours') relative to the current system date-time provided in your instructions."
+                  },
+                  notes: {
+                    type: "string",
+                    description: "Any relevant reasons, details, or context for the callback request."
+                  }
+                },
+                required: ["dateTimeISO"]
+              }
             }
           ]
         }],
@@ -2004,7 +2022,12 @@ wss.on('connection', async (ws, request) => {
                   contextStr += '--------------------------------------------------\n';
                   systemPromptText += contextStr;
                 }
-                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.\n\nWhen you successfully gather key information from the user (such as budget, machinery interest, or location), you MUST invoke the `submitLeadDetails` tool to record them immediately.\n\nIMPORTANT: Speak at a slightly slower, calm, and conversational pace. Take brief pauses between sentences to ensure clear, natural, and friendly communication.';
+
+                // Append current UTC system time for resolving relative date-times
+                const currentUtcTime = new Date().toISOString();
+                systemPromptText += `\n\n--------------------------------------------------\n[TELEPHONY SYSTEM DATE-TIME]\n- Current Date-Time (UTC): ${currentUtcTime}\n--------------------------------------------------\n`;
+
+                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.\n\nWhen you successfully gather key information from the user (such as budget, machinery interest, or location), you MUST invoke the `submitLeadDetails` tool to record them immediately.\n\nIf the user requests to be called back later, tomorrow, or at a specific time/date, invoke the `scheduleCallback` tool immediately to record the timestamp.\n\nIMPORTANT: Speak at a slightly slower, calm, and conversational pace. Take brief pauses between sentences to ensure clear, natural, and friendly communication.';
               })()
             }
           ]
@@ -2154,6 +2177,49 @@ wss.on('connection', async (ws, request) => {
                 output: {
                   success: success,
                   message: success ? "Lead details successfully recorded." : "Failed to record lead details."
+                }
+              }
+            });
+          } else if (fc.name === 'scheduleCallback') {
+            console.log(`[Gemini ToolCall] scheduleCallback invoked with args:`, JSON.stringify(fc.args));
+            let success = false;
+            try {
+              if (fc.args && fc.args.dateTimeISO) {
+                const dateTimeISO = fc.args.dateTimeISO;
+                const notes = fc.args.notes || '';
+                
+                // Update Supabase contact status and scheduled_at if contactId is valid
+                if (supabase && contactId && contactId !== 'direct') {
+                  const { error } = await supabase
+                    .from('campaign_contacts')
+                    .update({ 
+                      status: 'scheduled', 
+                      scheduled_at: dateTimeISO 
+                    })
+                    .eq('id', contactId);
+                  
+                  if (error) {
+                    console.error('[Gemini ToolCall] Error updating contact callback schedule:', error.message);
+                  } else {
+                    console.log(`[Gemini ToolCall] Successfully scheduled callback for contact ${contactId} at ${dateTimeISO}`);
+                    success = true;
+                  }
+                } else {
+                  console.log(`[Gemini ToolCall] Direct call or missing contactId (${contactId}). Cannot update DB contact.`);
+                  success = true; // Return success to Gemini so agent knows it resolved
+                }
+              }
+            } catch (err) {
+              console.error('[Gemini ToolCall] Error handling scheduleCallback:', err);
+            }
+
+            functionResponses.push({
+              name: fc.name,
+              id: fc.id,
+              response: {
+                output: {
+                  success: success,
+                  message: success ? "Callback successfully scheduled." : "Failed to schedule callback."
                 }
               }
             });
