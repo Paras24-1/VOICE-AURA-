@@ -302,7 +302,7 @@ export default function CallLogsPage() {
                     <audio
                       src={`/api/recordings/proxy?url=${encodeURIComponent(selectedCall.recording_url)}`}
                       controls
-                      className="w-full h-8 rounded-lg outline-none bg-transparent"
+                      className="w-full block mt-1.5 outline-none"
                     />
                   </div>
                 )}
