@@ -295,14 +295,14 @@ export default function CallLogsPage() {
 
                 {/* Call Recording Playback */}
                 {selectedCall.recording_url && (
-                  <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-900/60 space-y-1.5">
+                  <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-900/60 space-y-1.5 flex-shrink-0">
                     <span className="text-[9px] font-mono text-zinc-500 uppercase block tracking-wider">
                       Call Recording Playback
                     </span>
                     <audio
                       src={`/api/recordings/proxy?url=${encodeURIComponent(selectedCall.recording_url)}`}
                       controls
-                      className="w-full block mt-1.5 outline-none"
+                      className="w-full min-w-full block mt-1.5 outline-none flex-shrink-0"
                     />
                   </div>
                 )}
