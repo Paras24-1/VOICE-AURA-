@@ -256,10 +256,10 @@ export default function DashboardLayout({
               </div>
               <div>
                 <h1 className="font-heading font-bold text-xl tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
-                  ulai<span className="text-violet-500">.co</span>
+                  Voice Aura
                 </h1>
                 <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">
-                  Voice SaaS Engine
+                  Enterprise Node
                 </span>
               </div>
             </Link>
