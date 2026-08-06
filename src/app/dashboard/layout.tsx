@@ -20,7 +20,13 @@ import {
   Command,
   Sparkles,
   FileText,
-  PhoneCall
+  PhoneCall,
+  FolderOpen,
+  BookOpen,
+  BarChart3,
+  Globe,
+  Phone,
+  Network
 } from "lucide-react";
 
 interface SidebarItem {
@@ -125,37 +131,97 @@ export default function DashboardLayout({
     return () => window.removeEventListener("click", handleOutsideClick);
   }, []);
 
-  const navigation: SidebarItem[] = [
+  const navigationSections = [
     {
-      name: "Overview",
-      href: "/dashboard",
-      icon: LayoutDashboard,
-      description: "Real-time analytics & KPIs",
+      items: [
+        {
+          name: "Dashboard",
+          href: "/dashboard",
+          icon: LayoutDashboard,
+          description: "Real-time analytics & KPIs",
+        }
+      ]
     },
     {
-      name: "Voice Agents",
-      href: "/dashboard/agents",
-      icon: Mic,
-      description: "Configure conversational AI",
+      title: "BUILD",
+      items: [
+        {
+          name: "Agents",
+          href: "/dashboard/agents",
+          icon: Mic,
+          description: "Intelligent voice agents",
+        },
+        {
+          name: "KnowledgeBases",
+          href: "/dashboard/knowledge-bases",
+          icon: FolderOpen,
+          description: "AI documents & context",
+        },
+        {
+          name: "Phonebooks",
+          href: "/dashboard/phonebooks",
+          icon: BookOpen,
+          description: "Manage contact lists",
+        },
+        {
+          name: "Campaigns",
+          href: "/dashboard/campaigns",
+          icon: PhoneCall,
+          description: "Outbound voice campaigns",
+        },
+        {
+          name: "Campaign Rules",
+          href: "/dashboard/campaign-rules",
+          icon: Shield,
+          description: "Retry & schedule rules",
+        },
+        {
+          name: "Campaign Analytics",
+          href: "/dashboard/campaign-analytics",
+          icon: BarChart3,
+          description: "Detailed performance reports",
+        }
+      ]
     },
     {
-      name: "Campaigns",
-      href: "/dashboard/campaigns",
-      icon: PhoneCall,
-      description: "Outbound voice campaigns",
+      title: "TEST",
+      items: [
+        {
+          name: "Web Call",
+          href: "/dashboard/web-call",
+          icon: Globe,
+          description: "WebRTC calling tests",
+        },
+        {
+          name: "Voice calls",
+          href: "/dashboard/voice-calls",
+          icon: Phone,
+          description: "Outbound phone calls test",
+        }
+      ]
     },
     {
-      name: "Call Logs",
-      href: "/dashboard/logs",
-      icon: FileText,
-      description: "Transcripts & conversation history",
+      title: "MONITOR",
+      items: [
+        {
+          name: "Billing",
+          href: "/dashboard/billing",
+          icon: CreditCard,
+          description: "Stripe flows & subscriptions",
+        }
+      ]
     },
     {
-      name: "Billing & Plans",
-      href: "/dashboard/billing",
-      icon: CreditCard,
-      description: "Stripe flows & subscriptions",
-    },
+      title: "MANAGE",
+      items: [
+        {
+          name: "SIP Trunks",
+          href: "/dashboard/sip-trunks",
+          icon: Network,
+          description: "SIP gateway configuration",
+        }
+      ]
+    }
   ];
 
   return (
@@ -189,11 +255,11 @@ export default function DashboardLayout({
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#030303] animate-pulse" />
               </div>
               <div>
-                <h1 className="font-heading font-bold text-lg tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
-                  VoxAura<span className="text-violet-500">.AI</span>
+                <h1 className="font-heading font-bold text-xl tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
+                  ulai<span className="text-violet-500">.co</span>
                 </h1>
                 <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">
-                  Enterprise Node
+                  Voice SaaS Engine
                 </span>
               </div>
             </Link>
@@ -206,39 +272,42 @@ export default function DashboardLayout({
           </div>
 
           {/* Navigation Links */}
-          <nav className="p-4 space-y-1.5">
-            <div className="px-3 mb-2 text-[11px] font-mono tracking-widest text-zinc-500 uppercase">
-              Core Platform
-            </div>
-            {navigation.map((item) => {
-              const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`group flex items-start gap-4 p-3 rounded-xl transition-all duration-200 relative ${
-                    isActive
-                      ? "bg-gradient-to-r from-violet-600/10 to-indigo-600/5 border border-violet-500/30 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]"
-                      : "border border-transparent hover:bg-zinc-900/40 text-zinc-400 hover:text-zinc-200"
-                  }`}
-                >
-                  {isActive && (
-                    <div className="absolute left-0 top-1/4 bottom-1/4 w-[3px] rounded-r bg-violet-500" />
-                  )}
-                  <item.icon
-                    className={`w-5 h-5 mt-0.5 transition-transform group-hover:scale-105 ${
-                      isActive ? "text-violet-400" : "text-zinc-500 group-hover:text-zinc-300"
-                    }`}
-                  />
-                  <div>
-                    <div className="font-medium text-sm">{item.name}</div>
-                    <div className="text-[11px] text-zinc-500 group-hover:text-zinc-400 transition-colors mt-0.5 line-clamp-1">
-                      {item.description}
-                    </div>
+          <nav className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-160px)]">
+            {navigationSections.map((section, idx) => (
+              <div key={idx} className="space-y-1">
+                {section.title && (
+                  <div className="px-3 py-1.5 text-[9px] font-mono tracking-widest text-zinc-500 uppercase font-bold">
+                    {section.title}
                   </div>
-                </Link>
-              );
-            })}
+                )}
+                {section.items.map((item) => {
+                  const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={`group flex items-start gap-4 p-2.5 rounded-xl transition-all duration-200 relative ${
+                        isActive
+                          ? "bg-gradient-to-r from-violet-600/10 to-indigo-600/5 border border-violet-500/30 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]"
+                          : "border border-transparent hover:bg-zinc-900/40 text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      {isActive && (
+                        <div className="absolute left-0 top-1/4 bottom-1/4 w-[3px] rounded-r bg-violet-500" />
+                      )}
+                      <item.icon
+                        className={`w-4 h-4 mt-0.5 transition-transform group-hover:scale-105 ${
+                          isActive ? "text-violet-400" : "text-zinc-500 group-hover:text-zinc-300"
+                        }`}
+                      />
+                      <div>
+                        <div className="font-semibold text-xs">{item.name}</div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </div>
 
