@@ -40,6 +40,7 @@ interface VoiceAgentData {
   notification_email?: string;
   avatar_url?: string;
   description?: string;
+  emotion_tone?: string;
 }
 
 export default function AgentConfiguratorPage() {
@@ -57,7 +58,24 @@ export default function AgentConfiguratorPage() {
   const supabase = createClient();
 
   const [agentData, setAgentData] = useState<VoiceAgentData | null>(null);
+  const [versions, setVersions] = useState<{ id: string; version: number; system_prompt: string; created_at: string }[]>([]);
   const [savingPhone, setSavingPhone] = useState(false);
+
+  const fetchVersions = useCallback(async () => {
+    if (id === "new") return;
+    try {
+      const { data } = await supabase
+        .from('script_versions')
+        .select('*')
+        .eq('agent_id', id)
+        .order('version', { ascending: false });
+      if (data) {
+        setVersions(data);
+      }
+    } catch (e) {
+      console.error("Failed to load script version history:", e);
+    }
+  }, [id, supabase]);
 
   const handleSavePhone = async () => {
     if (!agentData) return;
@@ -95,7 +113,7 @@ export default function AgentConfiguratorPage() {
       if (!membership) return;
       const { data: agent, error } = await supabase
         .from('agents')
-        .select('id, name, language, lang_code, voice_profile, active, system_prompt, temperature, speech_threshold, silence_detection, telephone_number, transfer_number, notification_email, avatar_url, description')
+        .select('id, name, language, lang_code, voice_profile, active, system_prompt, temperature, speech_threshold, silence_detection, telephone_number, transfer_number, notification_email, avatar_url, description, emotion_tone')
         .eq('id', id)
         .eq('organization_id', membership.organization_id)
         .single();
@@ -117,6 +135,7 @@ export default function AgentConfiguratorPage() {
     if (id && id !== "new") {
       Promise.resolve().then(() => {
         fetchAgent();
+        fetchVersions();
       });
     } else {
       Promise.resolve().then(() => {
@@ -137,6 +156,7 @@ export default function AgentConfiguratorPage() {
           notification_email: "",
           avatar_url: undefined,
           description: undefined,
+          emotion_tone: "professional",
         });
         setLoading(false);
       });
@@ -191,6 +211,13 @@ export default function AgentConfiguratorPage() {
     setTimeout(() => setCopiedIframe(false), 2000);
   };
 
+  const handleRestoreVersion = (verText: string) => {
+    if (!agentData) return;
+    if (confirm("Are you sure you want to restore this script version? Any unsaved edits to the current prompt will be overwritten.")) {
+      setAgentData({ ...agentData, system_prompt: verText });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agentData) return;
@@ -242,7 +269,29 @@ export default function AgentConfiguratorPage() {
         notification_email: agentData.notification_email || "",
         avatar_url: agentData.avatar_url || null,
         description: agentData.description || null,
+        emotion_tone: agentData.emotion_tone || "professional"
       };
+
+      // Query latest script version to see if prompt changed
+      const { data: latestVer } = await supabase
+        .from('script_versions')
+        .select('version, system_prompt')
+        .eq('agent_id', agentData.id)
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const latestPrompt = latestVer ? latestVer.system_prompt : null;
+      if (agentData.system_prompt !== latestPrompt) {
+        const nextVer = latestVer ? latestVer.version + 1 : 1;
+        await supabase
+          .from('script_versions')
+          .insert({
+            agent_id: agentData.id,
+            version: nextVer,
+            system_prompt: agentData.system_prompt
+          });
+      }
 
       const { error: upsertError } = await supabase
         .from('agents')
@@ -504,6 +553,24 @@ export default function AgentConfiguratorPage() {
                 />
               </div>
 
+              {/* Emotion / Tone Profile Select */}
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block">
+                  Emotion / Tone Profile
+                </label>
+                <select
+                  value={agentData.emotion_tone || "professional"}
+                  onChange={(e) => setAgentData({ ...agentData, emotion_tone: e.target.value })}
+                  className="w-full h-11 px-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 focus:outline-none focus:border-violet-500/50"
+                >
+                  <option value="professional">Professional / Standard Tone</option>
+                  <option value="soft">Soft & Gentle Voice Tone</option>
+                  <option value="assertive">Assertive & Confident Tone</option>
+                  <option value="energetic">Energetic & Excited Tone</option>
+                  <option value="sympathetic">Sympathetic & Warm Tone</option>
+                </select>
+              </div>
+
               {/* System prompt instructions */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -520,6 +587,36 @@ export default function AgentConfiguratorPage() {
                   placeholder="Paste your system model instructions. Control behavior, persona, bounds, support FAQs..."
                   className="w-full p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500/50 leading-relaxed font-sans"
                 />
+
+                {versions.length > 0 && (
+                  <div className="mt-4 border-t border-zinc-900 pt-4 space-y-3">
+                    <h4 className="text-xs font-bold font-mono text-zinc-500 uppercase tracking-wider">
+                      Script Revisions History
+                    </h4>
+                    <div className="max-h-40 overflow-y-auto space-y-2 divide-y divide-zinc-900/60 pr-1">
+                      {versions.map((ver) => (
+                        <div key={ver.id} className="pt-2 flex items-center justify-between text-xs font-mono">
+                          <div className="text-zinc-400">
+                            <span className="text-violet-400 font-bold mr-2">v{ver.version}</span>
+                            {new Date(ver.created_at).toLocaleDateString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            })}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreVersion(ver.system_prompt)}
+                            className="text-[10px] px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white cursor-pointer transition-colors"
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

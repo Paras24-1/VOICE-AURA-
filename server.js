@@ -1508,6 +1508,30 @@ Response MUST be a valid JSON object matching this schema. You may wrap it in a 
   return {};
 }
 
+// Sync call logs dynamically to Google Sheets webhook URL if configured
+async function triggerGoogleSheetsSync(organizationId, callData) {
+  if (!supabase || !organizationId) return;
+  try {
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('google_sheets_webhook_url')
+      .eq('id', organizationId)
+      .maybeSingle();
+
+    if (org && org.google_sheets_webhook_url) {
+      console.log(`[Google Sheets Sync] Triggering webhook post to: ${org.google_sheets_webhook_url}`);
+      const response = await fetch(org.google_sheets_webhook_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(callData)
+      });
+      console.log(`[Google Sheets Sync] Webhook responded with status: ${response.status}`);
+    }
+  } catch (err) {
+    console.error(`[Google Sheets Sync] Webhook post failed:`, err.message);
+  }
+}
+
 // Send notification email containing structured lead details via SMTP/nodemailer
 async function sendLeadDetailsEmail(agentConfig, leadDetails, callMetadata) {
   const rawHost = (process.env.SMTP_HOST || '').trim().replace(/^["']|["']$/g, '');
@@ -1818,20 +1842,56 @@ wss.on('connection', async (ws, request) => {
     }
   }
 
-  // Fetch callSid from database as fallback for outbound campaign calls if not in query params
-  if (!callSid && contactId && contactId !== 'direct' && supabase) {
+  // Fetch callSid and metadata from database for outbound campaign calls
+  if (supabase) {
     try {
-      const { data } = await supabase
-        .from('campaign_contacts')
-        .select('call_sid')
-        .eq('id', contactId)
-        .single();
-      if (data && data.call_sid) {
-        callSid = data.call_sid;
-        console.log(`[WebSocket] Resolved callSid ${callSid} from database for contactId=${contactId}`);
+      let campaignContactDetails = null;
+      if (contactId && contactId !== 'direct') {
+        const { data } = await supabase
+          .from('campaign_contacts')
+          .select('*, campaigns(name, phonebooks(name))')
+          .eq('id', contactId)
+          .maybeSingle();
+        if (data) {
+          campaignContactDetails = data;
+          if (data.call_sid) {
+            callSid = data.call_sid;
+            console.log(`[WebSocket] Resolved callSid ${callSid} from database for contactId=${contactId}`);
+          }
+        }
+      } else if (customerPhone) {
+        const cleanNum = customerPhone.replace(/[^\d]/g, '').slice(-10);
+        if (cleanNum) {
+          const { data } = await supabase
+            .from('campaign_contacts')
+            .select('*, campaigns(name, phonebooks(name))')
+            .ilike('phone_number', `%${cleanNum}%`)
+            .limit(1)
+            .maybeSingle();
+          if (data) {
+            campaignContactDetails = data;
+          }
+        }
+      }
+
+      if (campaignContactDetails) {
+        const camp = Array.isArray(campaignContactDetails.campaigns)
+          ? campaignContactDetails.campaigns[0]
+          : (campaignContactDetails.campaigns as any);
+
+        leadContext = {
+          ...(leadContext || {}),
+          name: campaignContactDetails.name || leadContext?.name,
+          phone_number: campaignContactDetails.phone_number || leadContext?.phone_number,
+          lead_type: campaignContactDetails.lead_type || leadContext?.lead_type || "Outbound",
+          lead_source: campaignContactDetails.lead_source || leadContext?.lead_source || "Imported",
+          lead_temperature: campaignContactDetails.lead_temperature || leadContext?.lead_temperature || "Cold",
+          category: campaignContactDetails.category || leadContext?.category || "General Business"
+        };
+        console.log(`[WebSocket] Enriched leadContext with database metadata:`, JSON.stringify(leadContext));
       }
     } catch (e) {
-      console.error('[WebSocket] Error resolving callSid from database:', e);
+      console.error('[WebSocket] Error resolving campaign contact details:', e);
     }
   }
 
@@ -2022,6 +2082,17 @@ wss.on('connection', async (ws, request) => {
                   contextStr += '--------------------------------------------------\n';
                   systemPromptText += contextStr;
                 }
+
+                // Inject dynamic tone guidelines and category-specific pain points
+                let dynamicInstructions = '\n\n--------------------------------------------------\n[CONVERSATIONAL DIRECTION GUIDELINES]\n';
+                if (agentConfig.emotion_tone) {
+                  dynamicInstructions += `- Conversational Tone Profile: Speak in a ${agentConfig.emotion_tone} voice tone. Emulate a highly ${agentConfig.emotion_tone} emotion in your pitch, speed and words.\n`;
+                }
+                if (leadContext && leadContext.category) {
+                  dynamicInstructions += `- Category Hook: The client/lead belongs to the "${leadContext.category}" category. Modify your pitch to target their category pain points.\n`;
+                }
+                dynamicInstructions += '--------------------------------------------------\n';
+                systemPromptText += dynamicInstructions;
 
                 // Append current UTC system time for resolving relative date-times
                 const currentUtcTime = new Date().toISOString();
@@ -2645,6 +2716,24 @@ wss.on('connection', async (ws, request) => {
           console.error('[Supabase] Error writing call log:', error.message);
         } else {
           console.log('[Supabase] Call log transaction written successfully.');
+
+          // Trigger Google Sheets Webhook Sync
+          triggerGoogleSheetsSync(agentConfig.organization_id, {
+            call_id: callSid || null,
+            from_phone_number: logFromPhone,
+            to_phone_number: logToPhone,
+            duration_seconds: callDuration,
+            cost: finalCost,
+            status: 'completed',
+            transcript: finalTranscript,
+            lead_details: displayLeadDetails,
+            lead_type: leadContext?.lead_type || "Outbound",
+            lead_source: leadContext?.lead_source || "Imported",
+            lead_temperature: leadContext?.lead_temperature || "Cold",
+            category: leadContext?.category || "General Business"
+          }).catch(syncErr => {
+            console.error('[Google Sheets Sync] Async webhook sync error:', syncErr.message);
+          });
           
           console.log('[Email Automation] Triggering email dispatch for completed call...');
           sendLeadDetailsEmail(agentConfig, displayLeadDetails, {

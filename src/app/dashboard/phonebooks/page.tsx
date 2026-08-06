@@ -28,6 +28,10 @@ interface Contact {
   id: string;
   name: string;
   phone_number: string;
+  lead_type?: string;
+  lead_source?: string;
+  lead_temperature?: string;
+  category?: string;
 }
 
 export default function PhonebooksPage() {
@@ -47,7 +51,14 @@ export default function PhonebooksPage() {
   // New Phonebook Form State
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [csvContacts, setCsvContacts] = useState<{ name: string; phone_number: string }[]>([]);
+  const [csvContacts, setCsvContacts] = useState<{
+    name: string;
+    phone_number: string;
+    lead_type?: string;
+    lead_source?: string;
+    lead_temperature?: string;
+    category?: string;
+  }[]>([]);
   const [csvFileName, setCsvFileName] = useState("");
   const [csvError, setCsvError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -176,7 +187,14 @@ export default function PhonebooksPage() {
   const parseCSVText = (text: string) => {
     setCsvError("");
     const lines = text.split(/\r?\n/);
-    const parsed: { name: string; phone_number: string }[] = [];
+    const parsed: {
+      name: string;
+      phone_number: string;
+      lead_type?: string;
+      lead_source?: string;
+      lead_temperature?: string;
+      category?: string;
+    }[] = [];
 
     if (lines.length === 0 || (lines.length === 1 && !lines[0])) {
       setCsvError("The CSV file is empty.");
@@ -187,6 +205,10 @@ export default function PhonebooksPage() {
     const headers = lines[0].toLowerCase().split(/[;,]/);
     const nameIdx = headers.findIndex(h => h.includes("name"));
     const phoneIdx = headers.findIndex(h => h.includes("phone") || h.includes("number") || h.includes("mobile") || h.includes("contact"));
+    const typeIdx = headers.findIndex(h => h.includes("type"));
+    const sourceIdx = headers.findIndex(h => h.includes("source"));
+    const tempIdx = headers.findIndex(h => h.includes("temp") || h.includes("temperature"));
+    const catIdx = headers.findIndex(h => h.includes("category") || h.includes("industry"));
 
     if (phoneIdx === -1) {
       setCsvError("Could not find a phone/number/contact column in CSV headers.");
@@ -202,9 +224,20 @@ export default function PhonebooksPage() {
 
       const rawPhone = cols[phoneIdx].replace(/[^\d+]/g, "").trim();
       const name = nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx].replace(/^"|"$/g, "").trim() : "Lead " + i;
+      const leadType = typeIdx !== -1 && cols[typeIdx] ? cols[typeIdx].replace(/^"|"$/g, "").trim() : "Outbound";
+      const leadSource = sourceIdx !== -1 && cols[sourceIdx] ? cols[sourceIdx].replace(/^"|"$/g, "").trim() : "Imported";
+      const leadTemp = tempIdx !== -1 && cols[tempIdx] ? cols[tempIdx].replace(/^"|"$/g, "").trim() : "Cold";
+      const category = catIdx !== -1 && cols[catIdx] ? cols[catIdx].replace(/^"|"$/g, "").trim() : "General Business";
 
       if (rawPhone.length >= 7) {
-        parsed.push({ name, phone_number: rawPhone });
+        parsed.push({
+          name,
+          phone_number: rawPhone,
+          lead_type: leadType,
+          lead_source: leadSource,
+          lead_temperature: leadTemp,
+          category: category
+        });
       }
     }
 
@@ -278,7 +311,11 @@ export default function PhonebooksPage() {
         const contactRows = csvContacts.map(c => ({
           phonebook_id: newPb.id,
           name: c.name,
-          phone_number: c.phone_number
+          phone_number: c.phone_number,
+          lead_type: c.lead_type || "Outbound",
+          lead_source: c.lead_source || "Imported",
+          lead_temperature: c.lead_temperature || "Cold",
+          category: c.category || "General Business"
         }));
 
         const { error: contactsErr } = await supabase

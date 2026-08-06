@@ -32,6 +32,10 @@ interface CallLog {
   agent_name?: string;
   campaign_name?: string;
   phonebook_name?: string;
+  lead_type?: string;
+  lead_source?: string;
+  lead_temperature?: string;
+  category?: string;
 }
 
 interface Agent {
@@ -110,29 +114,41 @@ export default function VoiceCallsPage() {
           let campaignName = "Direct Outbound";
           let phonebookName = "Manual Test";
 
+          let leadType = "Outbound";
+          let leadSource = "Imported";
+          let leadTemp = "Cold";
+          let category = "General Business";
+
           if (log.to_phone_number) {
             // Find last 10 digits to match
             const cleanNum = log.to_phone_number.replace(/[^\d]/g, "").slice(-10);
             if (cleanNum.length === 10) {
               const { data: contactRow } = await supabase
                 .from("campaign_contacts")
-                .select("campaign_id, campaigns(name, phonebooks(name))")
+                .select("campaign_id, lead_type, lead_source, lead_temperature, category, campaigns(name, phonebooks(name))")
                 .ilike("phone_number", `%${cleanNum}%`)
                 .limit(1)
                 .maybeSingle();
 
-              if (contactRow && contactRow.campaigns) {
-                const camp = Array.isArray(contactRow.campaigns)
-                  ? contactRow.campaigns[0]
-                  : (contactRow.campaigns as any);
+              if (contactRow) {
+                leadType = contactRow.lead_type || leadType;
+                leadSource = contactRow.lead_source || leadSource;
+                leadTemp = contactRow.lead_temperature || leadTemp;
+                category = contactRow.category || category;
 
-                if (camp) {
-                  campaignName = camp.name || campaignName;
-                  const pb = Array.isArray(camp.phonebooks)
-                    ? camp.phonebooks[0]
-                    : camp.phonebooks;
-                  if (pb) {
-                    phonebookName = pb.name || phonebookName;
+                if (contactRow.campaigns) {
+                  const camp = Array.isArray(contactRow.campaigns)
+                    ? contactRow.campaigns[0]
+                    : (contactRow.campaigns as any);
+
+                  if (camp) {
+                    campaignName = camp.name || campaignName;
+                    const pb = Array.isArray(camp.phonebooks)
+                      ? camp.phonebooks[0]
+                      : camp.phonebooks;
+                    if (pb) {
+                      phonebookName = pb.name || phonebookName;
+                    }
                   }
                 }
               }
@@ -148,7 +164,11 @@ export default function VoiceCallsPage() {
             created_at: log.created_at,
             agent_name: log.agents?.name || "Default Agent",
             campaign_name: campaignName,
-            phonebook_name: phonebookName
+            phonebook_name: phonebookName,
+            lead_type: leadType,
+            lead_source: leadSource,
+            lead_temperature: leadTemp,
+            category: category
           };
         })
       );
@@ -351,10 +371,17 @@ export default function VoiceCallsPage() {
                     <td className="px-6 py-4">
                       <div className="space-y-0.5">
                         <span className="font-semibold text-zinc-300 block">{log.agent_name}</span>
-                        <div className="flex gap-1.5 text-[9px] text-zinc-550 font-mono">
+                        <div className="flex gap-1.5 text-[9px] text-zinc-550 font-mono flex-wrap">
                           <span className="hover:text-violet-400 transition-colors cursor-pointer">{log.campaign_name}</span>
                           <span>•</span>
                           <span className="hover:text-violet-400 transition-colors cursor-pointer">{log.phonebook_name}</span>
+                          <span>•</span>
+                          <span className="text-zinc-400">{log.category}</span>
+                          <span>•</span>
+                          <span className={`font-bold uppercase ${
+                            log.lead_temperature === "Hot" ? "text-rose-450 font-extrabold" :
+                            log.lead_temperature === "Warm" ? "text-amber-455 font-extrabold" : "text-sky-400"
+                          }`}>{log.lead_temperature}</span>
                         </div>
                       </div>
                     </td>

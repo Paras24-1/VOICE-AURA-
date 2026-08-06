@@ -302,7 +302,7 @@ export default function CampaignsPage() {
       // 2. Fetch contacts from selected Phonebook
       const { data: pbContacts, error: contactsErr } = await supabase
         .from("phonebook_contacts")
-        .select("name, phone_number")
+        .select("name, phone_number, lead_type, lead_source, lead_temperature, category")
         .eq("phonebook_id", selectedPhonebookId);
 
       if (contactsErr) throw contactsErr;
@@ -313,6 +313,10 @@ export default function CampaignsPage() {
           campaign_id: campaign.id,
           name: c.name,
           phone_number: c.phone_number,
+          lead_type: (c as any).lead_type || "Outbound",
+          lead_source: (c as any).lead_source || "Imported",
+          lead_temperature: (c as any).lead_temperature || "Cold",
+          category: (c as any).category || "General Business",
           status: "pending"
         }));
 

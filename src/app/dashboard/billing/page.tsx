@@ -49,6 +49,10 @@ export default function BillingPage() {
   const [rechargeAmount, setRechargeAmount] = useState("500");
   const [recharging, setRecharging] = useState(false);
 
+  // Webhook settings state
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [savingWebhook, setSavingWebhook] = useState(false);
+
   // Fetch organization
   const fetchOrg = useCallback(async () => {
     try {
@@ -77,12 +81,13 @@ export default function BillingPage() {
       // 1. Fetch wallet balance from organizations table
       const { data: orgData } = await supabase
         .from("organizations")
-        .select("wallet_balance")
+        .select("wallet_balance, google_sheets_webhook_url")
         .eq("id", orgId)
         .single();
 
       if (orgData) {
         setWalletBalance(Number(orgData.wallet_balance) || 0);
+        setWebhookUrl(orgData.google_sheets_webhook_url || "");
       }
 
       // 2. Fetch call logs to calculate totals
@@ -130,6 +135,24 @@ export default function BillingPage() {
       setLoading(false);
     }
   }, [orgId, supabase]);
+
+  const handleSaveWebhook = async () => {
+    if (!orgId) return;
+    setSavingWebhook(true);
+    try {
+      const { error } = await supabase
+        .from("organizations")
+        .update({ google_sheets_webhook_url: webhookUrl })
+        .eq("id", orgId);
+      if (error) throw error;
+      alert("Google Sheets Webhook URL saved successfully!");
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to save webhook URL: " + err.message);
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
 
   useEffect(() => {
     fetchOrg();
@@ -397,6 +420,32 @@ export default function BillingPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* GOOGLE SHEETS SYNC INTEGRATION */}
+      <div className="glass-panel p-6 rounded-2xl border border-zinc-800 space-y-4 bg-zinc-950/20">
+        <div>
+          <h3 className="font-bold text-sm text-zinc-200">Google Sheets Sync Webhook</h3>
+          <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
+            Configure an outbound webhook URL to synchronize lead details and call statuses directly to your Google Sheet AppScript pipeline.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            placeholder="https://script.google.com/macros/s/.../exec"
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            className="flex-1 h-11 px-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-violet-500/50 font-mono"
+          />
+          <button
+            onClick={handleSaveWebhook}
+            disabled={savingWebhook}
+            className="px-6 h-11 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold cursor-pointer transition-all flex items-center justify-center gap-2 disabled:opacity-40"
+          >
+            {savingWebhook ? "Saving..." : "Save Webhook"}
+          </button>
         </div>
       </div>
 
