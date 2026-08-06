@@ -1877,7 +1877,7 @@ wss.on('connection', async (ws, request) => {
       if (campaignContactDetails) {
         const camp = Array.isArray(campaignContactDetails.campaigns)
           ? campaignContactDetails.campaigns[0]
-          : (campaignContactDetails.campaigns as any);
+          : campaignContactDetails.campaigns;
 
         leadContext = {
           ...(leadContext || {}),
