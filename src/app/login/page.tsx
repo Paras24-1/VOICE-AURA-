@@ -48,8 +48,7 @@ function LoginContent() {
             window.location.replace(redirectedFrom);
           }, 1500);
         } else {
-          // Email verification link sent
-          setSuccessMsg("Registration successful! Check your email to verify your account.");
+          setSuccessMsg("Registration successful! You can now sign in.");
         }
       } else {
         // Sign In Flow
