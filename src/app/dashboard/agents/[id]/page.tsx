@@ -41,6 +41,8 @@ interface VoiceAgentData {
   avatar_url?: string;
   description?: string;
   emotion_tone?: string;
+  inbound_system_prompt?: string;
+  outbound_system_prompt?: string;
 }
 
 export default function AgentConfiguratorPage() {
@@ -113,7 +115,7 @@ export default function AgentConfiguratorPage() {
       if (!membership) return;
       const { data: agent, error } = await supabase
         .from('agents')
-        .select('id, name, language, lang_code, voice_profile, active, system_prompt, temperature, speech_threshold, silence_detection, telephone_number, transfer_number, notification_email, avatar_url, description, emotion_tone')
+        .select('id, name, language, lang_code, voice_profile, active, system_prompt, temperature, speech_threshold, silence_detection, telephone_number, transfer_number, notification_email, avatar_url, description, emotion_tone, inbound_system_prompt, outbound_system_prompt')
         .eq('id', id)
         .eq('organization_id', membership.organization_id)
         .single();
@@ -157,6 +159,8 @@ export default function AgentConfiguratorPage() {
           avatar_url: undefined,
           description: undefined,
           emotion_tone: "professional",
+          inbound_system_prompt: "",
+          outbound_system_prompt: "",
         });
         setLoading(false);
       });
@@ -214,7 +218,7 @@ export default function AgentConfiguratorPage() {
   const handleRestoreVersion = (verText: string) => {
     if (!agentData) return;
     if (confirm("Are you sure you want to restore this script version? Any unsaved edits to the current prompt will be overwritten.")) {
-      setAgentData({ ...agentData, system_prompt: verText });
+      setAgentData({ ...agentData, outbound_system_prompt: verText });
     }
   };
 
@@ -259,7 +263,7 @@ export default function AgentConfiguratorPage() {
         lang_code: agentData.lang_code,
         voice_id: agentData.voice_profile, // also populate legacy voice_id column
         voice_profile: agentData.voice_profile,
-        system_prompt: agentData.system_prompt,
+        system_prompt: agentData.outbound_system_prompt || agentData.system_prompt || "",
         active: agentData.active,
         temperature: agentData.temperature,
         speech_threshold: agentData.speech_threshold,
@@ -269,7 +273,9 @@ export default function AgentConfiguratorPage() {
         notification_email: agentData.notification_email || "",
         avatar_url: agentData.avatar_url || null,
         description: agentData.description || null,
-        emotion_tone: agentData.emotion_tone || "professional"
+        emotion_tone: agentData.emotion_tone || "professional",
+        inbound_system_prompt: agentData.inbound_system_prompt || "",
+        outbound_system_prompt: agentData.outbound_system_prompt || ""
       };
 
       // Query latest script version to see if prompt changed
@@ -282,14 +288,14 @@ export default function AgentConfiguratorPage() {
         .maybeSingle();
 
       const latestPrompt = latestVer ? latestVer.system_prompt : null;
-      if (agentData.system_prompt !== latestPrompt) {
+      if ((agentData.outbound_system_prompt || "") !== latestPrompt) {
         const nextVer = latestVer ? latestVer.version + 1 : 1;
         await supabase
           .from('script_versions')
           .insert({
             agent_id: agentData.id,
             version: nextVer,
-            system_prompt: agentData.system_prompt
+            system_prompt: agentData.outbound_system_prompt || ""
           });
       }
 
@@ -571,53 +577,72 @@ export default function AgentConfiguratorPage() {
                 </select>
               </div>
 
-              {/* System prompt instructions */}
+              {/* Outbound Call Script Instructions */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block">
-                    Core System Prompts & Instructions
+                  <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block font-bold">
+                    Outbound Call Script & Prompt (Campaigns)
                   </label>
-                  <span className="text-[10px] text-zinc-500 font-mono">Max 2,000 characters</span>
+                  <span className="text-[10px] text-zinc-550 font-mono">Outbound Campaign Dialing</span>
                 </div>
                 <textarea
                   required
-                  rows={6}
-                  value={agentData.system_prompt}
-                  onChange={(e) => setAgentData({ ...agentData, system_prompt: e.target.value })}
-                  placeholder="Paste your system model instructions. Control behavior, persona, bounds, support FAQs..."
-                  className="w-full p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500/50 leading-relaxed font-sans"
+                  rows={5}
+                  value={agentData.outbound_system_prompt || agentData.system_prompt || ""}
+                  onChange={(e) => setAgentData({ ...agentData, outbound_system_prompt: e.target.value })}
+                  placeholder="Paste your outbound campaign model instructions here (e.g. Sales qualifications, website pitches)..."
+                  className="w-full p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-violet-500/50 leading-relaxed font-sans"
                 />
-
-                {versions.length > 0 && (
-                  <div className="mt-4 border-t border-zinc-900 pt-4 space-y-3">
-                    <h4 className="text-xs font-bold font-mono text-zinc-500 uppercase tracking-wider">
-                      Script Revisions History
-                    </h4>
-                    <div className="max-h-40 overflow-y-auto space-y-2 divide-y divide-zinc-900/60 pr-1">
-                      {versions.map((ver) => (
-                        <div key={ver.id} className="pt-2 flex items-center justify-between text-xs font-mono">
-                          <div className="text-zinc-400">
-                            <span className="text-violet-400 font-bold mr-2">v{ver.version}</span>
-                            {new Date(ver.created_at).toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit"
-                            })}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRestoreVersion(ver.system_prompt)}
-                            className="text-[10px] px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white cursor-pointer transition-colors"
-                          >
-                            Restore
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
+
+              {/* Inbound Call Script Instructions */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider block font-bold">
+                    Inbound Call Script & Prompt (Incoming Calls)
+                  </label>
+                  <span className="text-[10px] text-zinc-550 font-mono">Incoming Telephony Direct</span>
+                </div>
+                <textarea
+                  required
+                  rows={5}
+                  value={agentData.inbound_system_prompt || agentData.system_prompt || ""}
+                  onChange={(e) => setAgentData({ ...agentData, inbound_system_prompt: e.target.value })}
+                  placeholder="Paste your inbound customer welcome instructions here (e.g. Support questions, helpdesk FAQ)..."
+                  className="w-full p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-violet-500/50 leading-relaxed font-sans"
+                />
+              </div>
+
+              {/* Script Revisions History panel */}
+              {versions.length > 0 && (
+                <div className="mt-4 border-t border-zinc-900 pt-4 space-y-3">
+                  <h4 className="text-xs font-bold font-mono text-zinc-500 uppercase tracking-wider">
+                    Outbound Script Revisions History
+                  </h4>
+                  <div className="max-h-40 overflow-y-auto space-y-2 divide-y divide-zinc-900/60 pr-1">
+                    {versions.map((ver) => (
+                      <div key={ver.id} className="pt-2 flex items-center justify-between text-xs font-mono">
+                        <div className="text-zinc-400">
+                          <span className="text-violet-400 font-bold mr-2">v{ver.version}</span>
+                          {new Date(ver.created_at).toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreVersion(ver.system_prompt)}
+                          className="text-[10px] px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white cursor-pointer transition-colors"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Action buttons */}

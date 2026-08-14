@@ -2067,7 +2067,10 @@ wss.on('connection', async (ws, request) => {
           parts: [
             {
               text: (() => {
-                let systemPromptText = agentConfig.system_prompt || agentConfig.systemPrompt || 'You are Vox, an ultra-low latency voice agent.';
+                const isInbound = !contactId || contactId === 'direct';
+                let systemPromptText = isInbound
+                  ? (agentConfig.inbound_system_prompt || agentConfig.system_prompt || 'You are Vox, an inbound voice assistant.')
+                  : (agentConfig.outbound_system_prompt || agentConfig.system_prompt || 'You are Vox, an outbound voice assistant.');
                 systemPromptText = processSystemPrompt(systemPromptText, leadContext);
                 
                 if (leadContext) {
