@@ -48,6 +48,15 @@ export default function PhonebooksPage() {
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
 
+  // Manual Inline Contact addition state
+  const [manualName, setManualName] = useState("");
+  const [manualPhone, setManualPhone] = useState("");
+  const [manualCategory, setManualCategory] = useState("General Business");
+  const [manualTemp, setManualTemp] = useState("Cold");
+  const [manualSource, setManualSource] = useState("Manual");
+  const [manualType, setManualType] = useState("Outbound");
+  const [addingManual, setAddingManual] = useState(false);
+
   // New Phonebook Form State
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
@@ -153,23 +162,62 @@ export default function PhonebooksPage() {
     }
   };
 
+  // Refresh Contacts List
+  const refreshContacts = async (phonebookId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("phonebook_contacts")
+        .select("*")
+        .eq("phonebook_id", phonebookId)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      setSelectedContacts(data || []);
+    } catch (err) {
+      console.error("Error refreshing contacts:", err);
+    }
+  };
+
   // View Contacts
   const handleViewContacts = async (pb: Phonebook) => {
     setSelectedPhonebook(pb);
     setIsContactsModalOpen(true);
     setContactsLoading(true);
+    await refreshContacts(pb.id);
+    setContactsLoading(false);
+  };
+
+  // Add Manual Contact
+  const handleAddManualContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPhonebook || !manualName.trim() || !manualPhone.trim()) return;
+    setAddingManual(true);
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("phonebook_contacts")
-        .select("*")
-        .eq("phonebook_id", pb.id)
-        .order("name", { ascending: true });
+        .insert({
+          phonebook_id: selectedPhonebook.id,
+          name: manualName.trim(),
+          phone_number: manualPhone.replace(/[^\d+]/g, "").trim(),
+          lead_type: manualType,
+          lead_source: manualSource,
+          lead_temperature: manualTemp,
+          category: manualCategory
+        });
+
       if (error) throw error;
-      setSelectedContacts(data || []);
-    } catch (err) {
-      console.error("Error fetching contacts:", err);
+
+      setManualName("");
+      setManualPhone("");
+      setManualCategory("General Business");
+      setManualTemp("Cold");
+      
+      await refreshContacts(selectedPhonebook.id);
+      fetchPhonebooks();
+    } catch (err: any) {
+      console.error("Error adding contact manually:", err);
+      alert("Failed to add contact: " + err.message);
     } finally {
-      setContactsLoading(false);
+      setAddingManual(false);
     }
   };
 
@@ -638,6 +686,55 @@ export default function PhonebooksPage() {
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Inline Manual Add Contact Form */}
+            <form onSubmit={handleAddManualContact} className="px-6 py-4 border-b border-zinc-900 bg-zinc-950/20 space-y-3">
+              <h3 className="text-xs font-bold font-mono text-zinc-400 uppercase tracking-wider block">Add Manual Contact</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  required
+                  placeholder="Full Name"
+                  value={manualName}
+                  onChange={(e) => setManualName(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none focus:border-violet-500/50"
+                />
+                <input
+                  type="text"
+                  required
+                  placeholder="Phone (e.g. +91XXXXXXXXXX)"
+                  value={manualPhone}
+                  onChange={(e) => setManualPhone(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none focus:border-violet-500/50 font-mono"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  placeholder="Category (e.g. Garments)"
+                  value={manualCategory}
+                  onChange={(e) => setManualCategory(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none focus:border-violet-500/50"
+                />
+                <select
+                  value={manualTemp}
+                  onChange={(e) => setManualTemp(e.target.value)}
+                  className="w-full h-9 px-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none focus:border-violet-500/50"
+                >
+                  <option value="Cold">Cold Lead</option>
+                  <option value="Warm">Warm Lead</option>
+                  <option value="Hot">Hot Lead</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={addingManual || !manualName.trim() || !manualPhone.trim()}
+                className="w-full h-9 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {addingManual && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Add Contact</span>
+              </button>
+            </form>
 
             <div className="p-6 overflow-y-auto flex-1 space-y-4">
               {contactsLoading ? (
