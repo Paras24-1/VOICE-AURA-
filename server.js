@@ -1470,6 +1470,8 @@ Extract the following fields if mentioned:
 - location: The location/city of the lead (e.g. "Rohtak")
 - machine_interest: The type of machine or plant the lead wants (e.g. "Water Bottle Plant")
 - language: The language preferred (e.g. "Hindi")
+- interested: boolean (true/false) indicating if they are interested in the services/proposals discussed (like building a website).
+- business_category: The industry/domain of the user's business (e.g. Garments, E-commerce, Restaurant, Gym, Real Estate).
 - notes: Any other relevant details mentioned.
 
 Response MUST be a valid JSON object matching this schema. You may wrap it in a markdown code block (e.g. \`\`\`json ... \`\`\`) or return it as raw text.
