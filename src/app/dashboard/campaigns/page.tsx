@@ -332,7 +332,8 @@ export default function CampaignsPage() {
       fetchCampaigns();
     } catch (err) {
       console.error("Error creating campaign:", err);
-      alert("Failed to provision campaign.");
+      const errMsg = err instanceof Error ? err.message : JSON.stringify(err);
+      alert("Failed to provision campaign: " + errMsg);
     } finally {
       setCreating(false);
     }
