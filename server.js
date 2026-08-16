@@ -230,9 +230,9 @@ async function startVobizRecording(callUuid, reqHost) {
   addCallDebugLog(callUuid, `startVobizRecording invoked. authId exists: ${!!authId}, authToken exists: ${!!authToken}`);
   if (!authId || !authToken || !callUuid) return;
 
-  const resolvedHost = reqHost || process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://voice-aura-production.up.railway.app';
-  const protocol = resolvedHost.startsWith('localhost') || resolvedHost.startsWith('127.0.0.1') ? 'http' : 'https';
-  const callbackUrl = resolvedHost.startsWith('http') ? `${resolvedHost}/api/vobiz/events` : `${protocol}://${resolvedHost}/api/vobiz/events`;
+  // Always use the dashboard endpoint — it correctly saves recording_url to Supabase
+  // The old /api/vobiz/events on Railway was receiving callbacks but not persisting them
+  const callbackUrl = 'https://voxaiagents.com/api/voice/vobiz/callback';
 
   const url = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
   addCallDebugLog(callUuid, `Requesting Vobiz API: POST ${url} with callback: ${callbackUrl}`);
