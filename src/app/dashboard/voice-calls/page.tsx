@@ -310,6 +310,7 @@ export default function VoiceCallsPage() {
           >
             <option value="All">All</option>
             <option value="completed">Completed</option>
+            <option value="voicemail">Voicemail</option>
             <option value="failed">Failed</option>
             <option value="busy">Busy</option>
             <option value="no-answer">No Answer</option>
@@ -389,9 +390,15 @@ export default function VoiceCallsPage() {
                       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         log.status === "completed" || log.status === "answered"
                           ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                          : log.status === "voicemail"
+                          ? "bg-amber-500/10 border border-amber-500/20 text-amber-400"
                           : "bg-zinc-800 text-zinc-400"
                       }`}>
-                        {log.status === "completed" || log.status === "answered" ? "Completed" : log.status}
+                        {log.status === "completed" || log.status === "answered"
+                          ? "Completed"
+                          : log.status === "voicemail"
+                          ? "Voicemail"
+                          : log.status}
                       </span>
                     </td>
                     <td className="px-6 py-4 font-mono text-zinc-400">

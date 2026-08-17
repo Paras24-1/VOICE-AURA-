@@ -1472,6 +1472,7 @@ Extract the following fields if mentioned:
 - language: The language preferred (e.g. "Hindi")
 - interested: boolean (true/false) indicating if they are interested in the services/proposals discussed (like building a website).
 - business_category: The industry/domain of the user's business (e.g. Garments, E-commerce, Restaurant, Gym, Real Estate).
+- is_voicemail: boolean (true/false) indicating if the call was answered by an automated voicemail greeting, carrier operator recording, or answering machine instead of a real person.
 - notes: Any other relevant details mentioned.
 
 Response MUST be a valid JSON object matching this schema. You may wrap it in a markdown code block (e.g. \`\`\`json ... \`\`\`) or return it as raw text.
@@ -2670,14 +2671,14 @@ wss.on('connection', async (ws, request) => {
           ...parsedCollectedDetails
         };
 
-        // Fallback: If no lead details were captured/merged, extract them from the transcript using Gemini 1.5 Flash
-        if (Object.keys(mergedLeadDetails).length === 0 && transcriptString) {
-          console.log('[Gemini Extractor] No lead details resolved. Extracting from transcript...');
+        // Extract structured lead details from the transcript using Gemini Flash
+        if (transcriptString) {
+          console.log('[Gemini Extractor] Extracting lead and voicemail status from transcript...');
           try {
             const extracted = await extractLeadDetailsFromTranscript(transcriptString, GEMINI_API_KEYS);
             if (extracted && Object.keys(extracted).length > 0) {
               console.log('[Gemini Extractor] Extracted details:', JSON.stringify(extracted));
-              mergedLeadDetails = { ...mergedLeadDetails, ...extracted };
+              mergedLeadDetails = { ...extracted, ...mergedLeadDetails }; // preserve live tool-call overrides if any
             }
           } catch (e) {
             console.error('[Gemini Extractor] Fallback extraction failed:', e.message);
@@ -2701,6 +2702,9 @@ wss.on('connection', async (ws, request) => {
           displayLeadDetails[k] = v;
         }
 
+        const isVoicemail = !!mergedLeadDetails.is_voicemail || String(mergedLeadDetails.is_voicemail).toLowerCase() === 'true';
+        const finalStatus = isVoicemail ? 'voicemail' : 'completed';
+
         const { error } = await supabase
           .from('call_logs')
           .insert({
@@ -2709,7 +2713,7 @@ wss.on('connection', async (ws, request) => {
             from_phone_number: logFromPhone,
             to_phone_number: logToPhone,
             duration_seconds: callDuration,
-            status: 'completed',
+            status: finalStatus,
             transcript: finalTranscript,
             cost: finalCost,
             call_sid: callSid || null,
@@ -2729,7 +2733,7 @@ wss.on('connection', async (ws, request) => {
             to_phone_number: logToPhone,
             duration_seconds: callDuration,
             cost: finalCost,
-            status: 'completed',
+            status: finalStatus,
             transcript: finalTranscript,
             lead_details: displayLeadDetails,
             lead_type: leadContext?.lead_type || "Outbound",
@@ -2764,13 +2768,13 @@ wss.on('connection', async (ws, request) => {
           }
         }
 
-        // Update campaign contact status to completed if this was a campaign call
+        // Update campaign contact status to completed/voicemail if this was a campaign call
         if (contactId && contactId !== 'direct') {
-          console.log(`[Campaign] Updating contact ${contactId} status to completed`);
+          console.log(`[Campaign] Updating contact ${contactId} status to ${finalStatus}`);
           const { error: updateErr } = await supabase
             .from('campaign_contacts')
             .update({
-              status: 'completed',
+              status: finalStatus,
               duration_seconds: callDuration,
               call_sid: streamSid || 'simulated-sid'
             })

@@ -156,7 +156,7 @@ export default function CampaignsPage() {
             .from("campaign_contacts")
             .select("*", { count: "exact", head: true })
             .eq("campaign_id", camp.id)
-            .in("status", ["failed", "no-answer", "busy"]);
+            .in("status", ["failed", "no-answer", "busy", "voicemail"]);
 
           const { data: durationRows } = await supabase
             .from("campaign_contacts")
