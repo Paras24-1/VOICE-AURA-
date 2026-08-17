@@ -2061,6 +2061,20 @@ wss.on('connection', async (ws, request) => {
                 },
                 required: ["dateTimeISO"]
               }
+            },
+            {
+              name: "endCall",
+              description: "Terminate the call immediately. Invoke this when the user requests to hang up, when the conversation has concluded naturally and you have said goodbye, or if you reach an automated voicemail greeting / carrier recording.",
+              parameters: {
+                type: "object",
+                properties: {
+                  reason: {
+                    type: "string",
+                    description: "The reason for ending the call, e.g. 'completed', 'voicemail', 'user_hung_up'."
+                  }
+                },
+                required: []
+              }
             }
           ]
         }],
@@ -2104,7 +2118,7 @@ wss.on('connection', async (ws, request) => {
                 const currentUtcTime = new Date().toISOString();
                 systemPromptText += `\n\n--------------------------------------------------\n[TELEPHONY SYSTEM DATE-TIME]\n- Current Date-Time (UTC): ${currentUtcTime}\n--------------------------------------------------\n`;
 
-                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.\n\nWhen you successfully gather key information from the user (such as budget, machinery interest, or location), you MUST invoke the `submitLeadDetails` tool to record them immediately.\n\nIf the user requests to be called back later, tomorrow, or at a specific time/date, invoke the `scheduleCallback` tool immediately to record the timestamp.\n\nIMPORTANT: Speak at a slightly slower, calm, and conversational pace. Take brief pauses between sentences to ensure clear, natural, and friendly communication.';
+                return systemPromptText + '\n\nIf the user requests to speak to a human or transfer the call, invoke the `transferCall` tool. Suggest transferring if the user is frustrated or if their request is beyond your capabilities.\n\nWhen you successfully gather key information from the user (such as budget, machinery interest, or location), you MUST invoke the `submitLeadDetails` tool to record them immediately.\n\nIf the user requests to be called back later, tomorrow, or at a specific time/date, invoke the `scheduleCallback` tool immediately to record the timestamp.\n\nIf you reach an automated voicemail greeting, carrier operator recording, answering machine, or hear the voicemail beep, IMMEDIATELY invoke the `endCall` tool with `{ "reason": "voicemail" }` to terminate the call. Also invoke `endCall` with `{ "reason": "completed" }` if the conversation has concluded naturally and you have said goodbye.\n\nIMPORTANT: Speak at a slightly slower, calm, and conversational pace. Take brief pauses between sentences to ensure clear, natural, and friendly communication.';
               })()
             }
           ]
@@ -2234,6 +2248,37 @@ wss.on('connection', async (ws, request) => {
                 }
               }
             });
+          } else if (fc.name === 'endCall') {
+            console.log(`[Gemini ToolCall] endCall invoked with args:`, JSON.stringify(fc.args));
+            let success = true;
+            try {
+              if (fc.args && fc.args.reason === 'voicemail') {
+                ws.collectedLeadDetails = {
+                  ...(ws.collectedLeadDetails || {}),
+                  is_voicemail: true
+                };
+              }
+            } catch (err) {
+              console.error('[Gemini ToolCall] Error handling endCall:', err);
+              success = false;
+            }
+
+            functionResponses.push({
+              name: fc.name,
+              id: fc.id,
+              response: {
+                output: {
+                  success: success,
+                  message: success ? "Call termination initiated." : "Failed to initiate call termination."
+                }
+              }
+            });
+
+            // Terminate connection shortly after returning tool result
+            setTimeout(() => {
+              console.log(`[Gemini ToolCall] Closing websocket stream to hang up call...`);
+              ws.close();
+            }, 600);
           } else if (fc.name === 'submitLeadDetails') {
             console.log(`[Gemini ToolCall] submitLeadDetails invoked with args:`, JSON.stringify(fc.args));
             let success = false;
