@@ -607,18 +607,47 @@ app.all('/api/recordings/proxy', async (req, res) => {
     return res.status(400).send('Missing url parameter');
   }
 
-  // Security: only allow proxying URLs from media.vobiz.ai or api.vobiz.ai domains
+  // Security: only allow proxying URLs from *.vobiz.ai domains
   try {
     const parsedUrl = new URL(targetUrl);
-    if (parsedUrl.hostname !== 'media.vobiz.ai' && parsedUrl.hostname !== 'api.vobiz.ai') {
+    if (!parsedUrl.hostname.endsWith('vobiz.ai')) {
       return res.status(403).send('Forbidden target host');
     }
   } catch (err) {
     return res.status(400).send('Invalid url parameter');
   }
 
-  const authId = process.env.VOBIZ_AUTH_ID;
-  const authToken = process.env.VOBIZ_AUTH_TOKEN;
+  let authId = process.env.VOBIZ_AUTH_ID;
+  let authToken = process.env.VOBIZ_AUTH_TOKEN;
+
+  // Resolve organization-specific credentials dynamically from database
+  if (supabase) {
+    try {
+      const { data: callLog } = await supabase
+        .from('call_logs')
+        .select('organization_id')
+        .eq('recording_url', targetUrl)
+        .limit(1)
+        .maybeSingle();
+
+      if (callLog && callLog.organization_id) {
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('vobiz_auth_id, vobiz_auth_token')
+          .eq('id', callLog.organization_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (org && org.vobiz_auth_id && org.vobiz_auth_token) {
+          console.log(`[Recording Proxy] Resolved credentials for Org ${callLog.organization_id} from database`);
+          authId = org.vobiz_auth_id;
+          authToken = org.vobiz_auth_token;
+        }
+      }
+    } catch (dbErr) {
+      console.error('[Recording Proxy] Database lookup error:', dbErr.message);
+    }
+  }
 
   if (!authId || !authToken) {
     return res.status(500).send('Missing Vobiz configuration on server');
